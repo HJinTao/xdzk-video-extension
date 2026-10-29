@@ -1,0 +1,100 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createController } from "../extension/lib/controller.js";
+import { mediaKey } from "../extension/lib/media.js";
+import { createApi, mediaUrl, snapshot, pageSender, popupSender } from "./fixtures.mjs";
+
+const response = (camera = "CloudIPC-demo-a") => ({
+  tabId: 1, frameId: 0, documentId: "doc-a", url: mediaUrl(camera), statusCode: 206,
+  responseHeaders: [{ name: "Content-Type", value: "video/mp4" }, { name: "Content-Range", value: "bytes 0-31/791215769" }]
+});
+
+test("serializes concurrent captures and survives a service-worker restart", async () => {
+  const { api } = createApi();
+  const controller = createController(api);
+  await Promise.all([...Array(12)].map((_, index) => controller.recordResponse(response(index % 2 ? "CloudIPC-demo-a" : "CloudIPC-demo-b"))));
+  const nextWorker = createController(api);
+  const state = await nextWorker.dispatch({ type: "GET_STATE", tabId: 1 }, popupSender);
+  assert.equal(state.media.length, 2);
+  assert.ok(state.media.every((media) => media.size === 791215769));
+});
+
+test("downloads both cameras with signed URLs, unique filenames, settings and native progress", async () => {
+  const { api, downloadCalls, jobs } = createApi();
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.dispatch({ type: "SET_OPTIONS", saveAs: true }, popupSender);
+  let view = await controller.dispatch({ type: "DOWNLOAD_ALL", tabId: 1 }, popupSender);
+  assert.equal(view.started, 2);
+  assert.equal(downloadCalls.length, 2);
+  assert.equal(downloadCalls[0].url, mediaUrl());
+  assert.equal(downloadCalls[0].saveAs, true);
+  assert.match(downloadCalls[0].filename, /^西电智课\/数据库系统\//);
+  assert.notEqual(downloadCalls[0].filename, downloadCalls[1].filename);
+  assert.equal((await controller.dispatch({ type: "DOWNLOAD_ALL", tabId: 1 }, popupSender)).started, 0);
+  assert.equal(downloadCalls.length, 2);
+  jobs.get(1).bytesReceived = 400000000;
+  view = await controller.dispatch({ type: "GET_STATE", tabId: 1 }, popupSender);
+  assert.equal(view.media[0].download.bytesReceived, 400000000);
+  await controller.dispatch({ type: "CONTROL_DOWNLOAD", tabId: 1, key: view.media[0].key, action: "pause" }, popupSender);
+  assert.equal(jobs.get(1).paused, true);
+  await controller.dispatch({ type: "CONTROL_DOWNLOAD", tabId: 1, key: view.media[0].key, action: "resume" }, popupSender);
+  assert.equal(jobs.get(1).paused, false);
+});
+
+test("only trusted extension UI can initiate downloads and control its own tasks", async () => {
+  const { api, downloadCalls } = createApi();
+  const controller = createController(api);
+  await assert.rejects(controller.dispatch({ type: "DOWNLOAD_ALL", tabId: 1 }, pageSender), /扩展面板/);
+  await assert.rejects(controller.dispatch({ type: "GET_STATE", tabId: 1 }, { ...popupSender, id: "other-extension" }), /来源无效/);
+  await assert.rejects(controller.dispatch({ type: "CONTROL_DOWNLOAD", tabId: 1, key: "unowned", action: "cancel" }, popupSender), /找不到下载任务/);
+  assert.equal(downloadCalls.length, 0);
+});
+
+test("ignores failures and unrelated tabs, clears navigation state and removes closed tabs", async () => {
+  const { api, session } = createApi();
+  const controller = createController(api);
+  await controller.recordResponse({ ...response(), statusCode: 403 });
+  await controller.recordResponse({ ...response(), statusCode: 200, responseHeaders: [{ name: "Content-Type", value: "text/html" }] });
+  assert.equal(Object.keys(session).length, 0);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.tabUpdated(1, { status: "loading" });
+  assert.equal((await controller.dispatch({ type: "GET_STATE", tabId: 1 }, popupSender)).media.length, 0);
+  await controller.recordResponse(response());
+  await controller.tabRemoved(1);
+  await controller.recordResponse(response());
+  assert.equal(session["tab:1"], undefined);
+  const unrelated = createApi({ url: "https://example.com/" });
+  await createController(unrelated.api).recordResponse(response());
+  assert.equal(Object.keys(unrelated.session).length, 0);
+});
+
+test("preserves a newer signature, user labels and name edits when old range requests finish", async () => {
+  const { api, downloadCalls } = createApi();
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.dispatch({ type: "RENAME_MEDIA", tabId: 1, key: mediaKey(mediaUrl()), value: "课件" }, popupSender);
+  await controller.dispatch({ type: "SET_TITLE", tabId: 1, value: "数据库／第1讲" }, popupSender);
+  await controller.recordResponse({ ...response(), url: mediaUrl("CloudIPC-demo-a", 1700000300) });
+  await controller.recordResponse(response());
+  await controller.dispatch({ type: "DOWNLOAD_MEDIA", tabId: 1, key: mediaKey(mediaUrl()) }, popupSender);
+  assert.equal(downloadCalls[0].url, mediaUrl("CloudIPC-demo-a", 1700000300));
+  assert.match(downloadCalls[0].filename, /数据库 第1讲/);
+  assert.match(downloadCalls[0].filename, /课件\.mp4$/);
+});
+
+test("reports start failures per channel instead of losing the successful download", async () => {
+  const { api, downloadCalls } = createApi();
+  const nativeDownload = api.downloads.download;
+  api.downloads.download = async (options) => {
+    if (options.url.includes("demo-b")) throw new Error("cancelled");
+    return nativeDownload(options);
+  };
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  const view = await controller.dispatch({ type: "DOWNLOAD_ALL", tabId: 1 }, popupSender);
+  assert.equal(view.started, 1);
+  assert.equal(view.failed, 1);
+  assert.equal(downloadCalls.length, 1);
+  assert.ok(view.media[1].downloadError);
+});

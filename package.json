@@ -1,0 +1,20 @@
+{
+  "name": "xdzk-recorder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "西电智课录播下载 Chrome / Edge 扩展",
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/package.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.2",
+    "jsdom": "^26.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

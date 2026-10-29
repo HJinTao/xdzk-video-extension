@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>西电智课录播下载</title>
+  <link rel="stylesheet" href="popup.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4h11A1.5 1.5 0 0 1 19 5.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 13.5zM9 20h6M12 15v5M10 7l5 2.5-5 2.5z"/></svg></div>
+      <div><h1>智课 · 录播下载</h1><p>把课堂留在本地，随时回看。</p></div>
+      <span class="version">v0.1</span>
+    </header>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+    <section id="unsupported" class="empty unsupported" hidden>
+      <span class="empty-symbol" aria-hidden="true">↗</span>
+      <h2>先打开一节课程回放</h2>
+      <p>在西电智课平台登录，打开回放后再点击扩展图标。</p>
+    </section>
+
+    <div id="workspace" hidden>
+      <section class="course-section">
+        <label for="course-name" class="eyebrow">当前课程 <span>可修改保存名称</span></label>
+        <input id="course-name" class="course-name" type="text" maxlength="60" autocomplete="off" value="课程录播">
+        <div class="course-meta"><span class="status-dot"></span><span id="summary">正在识别当前页面…</span></div>
+      </section>
+
+      <div class="toolbar">
+        <h2>录播画面 <span id="media-count">0</span></h2>
+        <button id="scan" class="button quiet"><span aria-hidden="true">↻</span> 重新识别</button>
+      </div>
+
+      <section id="empty" class="empty" hidden>
+        <span class="empty-symbol" aria-hidden="true">▷</span>
+        <h3>等待视频出现</h3>
+        <p>在回放页点击播放，再点“重新识别”。<br>双画面课程可以分别播放两路画面。</p>
+      </section>
+
+      <div id="media-list" class="media-list"></div>
+
+      <footer class="footer">
+        <label class="save-option"><input id="save-as" type="checkbox"> 每次选择保存位置</label>
+        <button id="download-all" class="button primary download-all" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4"/></svg>下载全部画面</button>
+        <div class="footer-note"><span>关闭面板后，下载仍会继续。</span><button id="open-downloads" class="text-button">查看下载 ↗</button></div>
+      </footer>
+    </div>
+  </main>
+
+  <template id="media-template">
+    <article class="media-card">
+      <div class="card-heading"><span class="channel-number"></span><input class="channel-name" aria-label="画面名称" maxlength="32" autocomplete="off"><span class="file-type">MP4</span></div>
+      <div class="media-facts"></div>
+      <div class="camera-id" title="机位目录"></div>
+      <div class="preview" hidden><video controls preload="none" playsinline></video><p class="preview-error" hidden>预览暂时不可用。请刷新回放页面，再重新识别视频。</p></div>
+      <div class="card-actions"><button class="button quiet preview-button">预览画面</button><button class="button quiet copy-button">复制链接</button><button class="button secondary download-button">下载视频 <span aria-hidden="true">↓</span></button></div>
+      <div class="download-status" hidden><progress max="100" value="0" aria-label="下载进度"></progress><div class="progress-line"><span class="progress-label"></span><button class="text-button control-button"></button></div></div>
+      <p class="card-error" role="status" hidden></p>
+    </article>
+  </template>
+</body>
+</html>
