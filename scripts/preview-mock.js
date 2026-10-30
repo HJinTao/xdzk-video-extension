@@ -2,14 +2,15 @@
   const params = new URLSearchParams(location.search);
   const unsupported = params.has("unsupported");
   const empty = params.has("empty");
+  const playerDemo = location.pathname.endsWith("/player.html");
   const state = {
-    ok: true, supported: !unsupported, courseTitle: "数据库系统", options: { saveAs: false },
+    ok: true, supported: !unsupported, courseTitle: playerDemo ? "双路同步播放 · 示例视频" : "数据库系统", options: { saveAs: false },
     media: empty ? [] : [0, 1].map((index) => {
       const camera = `CloudIPC-demo-${index ? "b" : "a"}`;
       return {
         key: camera, camera, label: `画面 ${index + 1}`, width: 1920, height: 1080, duration: 3000,
         size: index ? 462123456 : 791215769,
-        url: `https://kdlbptvideo.xidian.edu.cn/vod/demo/20260911/${camera}/1789109401000-1789112400000.mp4?auth_key=1700000000-0-0-demo`
+        url: playerDemo ? "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" : `https://kdlbptvideo.xidian.edu.cn/vod/demo/20260911/${camera}/1789109401000-1789112400000.mp4?auth_key=1700000000-0-0-demo`
       };
     })
   };
@@ -17,6 +18,7 @@
     tabs: { async query() { return [{ id: 1 }]; }, async create() {} },
     runtime: {
       async sendMessage(message) {
+        if (message.type === "OPEN_PLAYER") { window.open("/player.html?id=demo", "_blank"); return { ok: true }; }
         if (message.type === "SET_OPTIONS") state.options.saveAs = message.saveAs;
         if (message.type === "SET_TITLE") state.courseTitle = message.value;
         if (message.type === "RENAME_MEDIA") state.media.find((item) => item.key === message.key).label = message.value;

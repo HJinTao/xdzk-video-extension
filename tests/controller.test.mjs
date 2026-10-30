@@ -98,3 +98,33 @@ test("reports start failures per channel instead of losing the successful downlo
   assert.equal(downloadCalls.length, 1);
   assert.ok(view.media[1].downloadError);
 });
+
+test("opens an independent player without putting signed URLs into browsing history", async () => {
+  const { api, createdTabs, session } = createApi();
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  const url = new URL(createdTabs[0].url);
+  assert.equal(url.pathname, "/player.html");
+  assert.equal(url.href.includes("auth_key"), false);
+  const id = url.searchParams.get("id");
+  let data = await controller.dispatch({ type: "GET_PLAYER", id }, popupSender);
+  assert.equal(data.media.length, 2);
+  assert.equal(data.media[0].url, mediaUrl());
+  await controller.recordResponse({ ...response(), url: mediaUrl("CloudIPC-demo-a", 1700000500) });
+  data = await controller.dispatch({ type: "GET_PLAYER", id, refresh: true }, popupSender);
+  assert.equal(data.media[0].url, mediaUrl("CloudIPC-demo-a", 1700000500));
+  await controller.tabRemoved(1);
+  assert.equal((await controller.dispatch({ type: "GET_PLAYER", id }, popupSender)).media.length, 2);
+  await controller.tabRemoved(createdTabs[0].id);
+  assert.equal(session[`player:${id}`], undefined);
+  await assert.rejects(controller.dispatch({ type: "GET_PLAYER", id }, popupSender), /记录已清除/);
+});
+
+test("a single video cannot open dual playback and player IDs are validated", async () => {
+  const { api } = createApi();
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot: { ...snapshot, media: snapshot.media.slice(0, 1) } }, pageSender);
+  await assert.rejects(controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender), /至少需要两路/);
+  await assert.rejects(controller.dispatch({ type: "GET_PLAYER", id: "tab:1" }, popupSender), /地址无效/);
+});

@@ -11,8 +11,8 @@
   <main class="app">
     <header class="header">
       <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4h11A1.5 1.5 0 0 1 19 5.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 13.5zM9 20h6M12 15v5M10 7l5 2.5-5 2.5z"/></svg></div>
-      <div><h1>智课 · 录播下载</h1><p>把课堂留在本地，随时回看。</p></div>
-      <span class="version">v0.1</span>
+      <div><h1>智课 · 录播助手</h1><p>同步看课堂，也能保存到本地。</p></div>
+      <span class="version">v0.2</span>
     </header>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -44,6 +44,8 @@
       <div id="media-list" class="media-list"></div>
 
       <footer class="footer">
+        <button id="open-player" class="button secondary sync-open" disabled>双路同步播放 ↗</button>
+        <details class="cloud-guide"><summary>存到 123 云盘</summary><p>复制视频链接，在 123 云盘新建离线任务。请先确认账号的离线下载权限；任务成功后才完成云端归档。</p><div><button id="copy-cloud-links" class="text-button" disabled>复制全部视频链接</button><button id="open-cloud" class="text-button">打开 123 云盘 ↗</button></div></details>
         <label class="save-option"><input id="save-as" type="checkbox"> 每次选择保存位置</label>
         <button id="download-all" class="button primary download-all" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4"/></svg>下载全部画面</button>
         <div class="footer-note"><span>关闭面板后，下载仍会继续。</span><button id="open-downloads" class="text-button">查看下载 ↗</button></div>

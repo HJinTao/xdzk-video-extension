@@ -15,7 +15,7 @@ const server = createServer(async (request, response) => {
     const path = resolve(root, `.${pathname === "/" ? "/popup.html" : pathname}`);
     if (!path.startsWith(root + sep)) throw new Error("Invalid path");
     let content = await readFile(path);
-    if (path.endsWith("popup.html")) content = Buffer.from(content.toString("utf8").replace("<head>", '<head><script src="/preview-mock.js"></script>').replace("<title>西电智课录播下载</title>", "<title>扩展界面演示 · 示例数据</title>"));
+    if (path.endsWith("popup.html") || path.endsWith("player.html")) content = Buffer.from(content.toString("utf8").replace("<head>", '<head><script src="/preview-mock.js"></script>').replace("<title>西电智课录播下载</title>", "<title>扩展界面演示 · 示例数据</title>"));
     response.writeHead(200, { "Content-Type": types[extname(path)] || "application/octet-stream", "Cache-Control": "no-store" });
     response.end(content);
   } catch {

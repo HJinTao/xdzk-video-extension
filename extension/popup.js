@@ -27,6 +27,7 @@ async function act(operation) {
   if (busy) return;
   busy = true;
   $("download-all").disabled = true;
+  $("open-player").disabled = true;
   $("scan").disabled = true;
   try {
     const result = await operation();
@@ -38,6 +39,7 @@ async function act(operation) {
     busy = false;
     $("scan").disabled = false;
     $("download-all").disabled = !state?.media?.length;
+    $("open-player").disabled = (state?.media?.length || 0) < 2;
   }
 }
 
@@ -135,6 +137,8 @@ function render(next) {
   $("summary").textContent = next.media.length ? `已识别 ${next.media.length} 路画面 · 可预览、改名后下载` : "等待回放视频加载";
   $("empty").hidden = next.media.length > 0;
   $("download-all").disabled = busy || !next.media.length;
+  $("open-player").disabled = busy || next.media.length < 2;
+  $("copy-cloud-links").disabled = !next.media.length;
   const keys = new Set(next.media.map((media) => media.key));
   for (const [key, card] of cards) if (!keys.has(key)) { card.remove(); cards.delete(key); }
   next.media.forEach((media, index) => {
@@ -175,6 +179,21 @@ $("download-all").addEventListener("click", () => { void act(async () => {
   return result;
 }); });
 $("open-downloads").addEventListener("click", () => { void chrome.tabs.create({ url: "chrome://downloads/" }); });
+$("open-cloud").addEventListener("click", () => { void chrome.tabs.create({ url: "https://yun.123pan.cn/" }); });
+$("copy-cloud-links").addEventListener("click", async () => {
+  try {
+    const links = state?.media?.map((item) => item.url) || [];
+    if (!links.length) return;
+    await navigator.clipboard.writeText(links.join("\n"));
+    notice(`已复制 ${links.length} 路视频链接，每行一个。请到 123 云盘创建离线任务；当前尚未上传视频。`);
+  } catch { notice("浏览器未允许复制，请使用各画面的“复制链接”重试。", true); }
+});
+$("open-player").addEventListener("click", () => { void act(async () => {
+  await persistTitle();
+  await Promise.all([...cards.values()].map((card) => card.pendingName));
+  await send("OPEN_PLAYER");
+  notice("已在新标签页打开双路同步播放，无需先下载视频。");
+}); });
 
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

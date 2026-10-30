@@ -18,6 +18,7 @@ export function createApi({ url = pageUrl } = {}) {
   const local = {};
   const jobs = new Map();
   const downloadCalls = [];
+  const createdTabs = [];
   const storage = (data) => ({
     async get(keys) {
       await new Promise((done) => setTimeout(done, 1));
@@ -31,7 +32,7 @@ export function createApi({ url = pageUrl } = {}) {
     runtime: { id: "test-extension", getURL: (path) => `chrome-extension://test-extension/${path}` },
     storage: { session: storage(session), local: storage(local) },
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
-    tabs: { async get(id) { return { id, url, title: "课程直播" }; }, async query() { return [{ id: 1, url }]; }, async create() {} },
+    tabs: { async get(id) { return { id, url, title: "课程直播" }; }, async query() { return [{ id: 1, url }]; }, async create(options) { const tab = { id: 100 + createdTabs.length, ...options }; createdTabs.push(tab); return tab; } },
     scripting: { async executeScript() { return []; } },
     downloads: {
       async search({ id }) { return jobs.has(id) ? [structuredClone(jobs.get(id))] : []; },
@@ -46,5 +47,5 @@ export function createApi({ url = pageUrl } = {}) {
       async cancel(id) { Object.assign(jobs.get(id), { state: "interrupted", error: "USER_CANCELED" }); }
     }
   };
-  return { api, session, local, jobs, downloadCalls };
+  return { api, session, local, jobs, downloadCalls, createdTabs };
 }

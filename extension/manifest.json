@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "西电智课 · 录播下载",
-  "description": "识别西电智课回放中的 MP4，预览两路画面并保存到本地。",
-  "version": "0.1.0",
+  "description": "识别西电智课回放中的 MP4，双路同步播放、切换音源并保存到本地。",
+  "version": "0.2.0",
   "minimum_chrome_version": "114",
   "permissions": ["activeTab", "scripting", "storage", "webRequest", "downloads"],
   "host_permissions": [

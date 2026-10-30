@@ -152,12 +152,47 @@ export function createController(api) {
     return view(tabId);
   }
 
+  async function openPlayer(tabId) {
+    const current = await view(tabId);
+    if (!current.supported || current.media.length < 2) throw new Error("至少需要两路视频，请先播放两路画面并重新识别。");
+    const id = crypto.randomUUID();
+    const key = `player:${id}`;
+    const payload = { sourceTabId: tabId, courseTitle: current.courseTitle, media: current.media, createdAt: Date.now() };
+    await api.storage.session.set({ [key]: payload });
+    try {
+      const tab = await api.tabs.create({ url: `${api.runtime.getURL("player.html")}?id=${id}` });
+      await api.storage.session.set({ [key]: { ...payload, playerTabId: tab?.id } });
+    } catch {
+      await api.storage.session.remove(key);
+      throw new Error("无法打开同步播放器，请重试。");
+    }
+    return { ok: true };
+  }
+
+  async function playerData(id, refresh) {
+    if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new Error("播放器地址无效，请从扩展面板重新打开。");
+    const key = `player:${id}`;
+    let payload = (await api.storage.session.get(key))[key];
+    if (!payload) throw new Error("本次播放记录已清除，请回到回放页面重新打开同步播放。");
+    let notice = "";
+    if (refresh) {
+      const latest = await view(payload.sourceTabId);
+      if (latest.supported && latest.media.length >= 2) {
+        payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
+        await api.storage.session.set({ [key]: payload });
+      } else notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+    }
+    return { ok: true, courseTitle: payload.courseTitle, media: payload.media, notice };
+  }
+
   async function dispatch(message, sender = {}) {
     if (sender.id !== api.runtime.id) throw new Error("请求来源无效。" );
     if (message?.type === "PAGE_SNAPSHOT") return snapshot(message, sender);
     if (!sender.url?.startsWith(api.runtime.getURL(""))) throw new Error("请通过扩展面板操作。" );
     const tabId = message?.tabId;
     switch (message?.type) {
+      case "OPEN_PLAYER": return openPlayer(tabId);
+      case "GET_PLAYER": return playerData(message.id, !!message.refresh);
       case "GET_STATE": return view(tabId);
       case "SCAN_TAB": return scan(tabId);
       case "SET_TITLE": return edit(tabId, (state) => { state.titleOverride = sanitizeName(message.value, "课程录播", 60); });
@@ -211,6 +246,10 @@ export function createController(api) {
   async function tabRemoved(tabId) {
     closedTabs.add(tabId);
     await enqueue(tabId, () => api.storage.session.remove(storageKey(tabId)));
+    const entries = await api.storage.session.get(null);
+    for (const [key, entry] of Object.entries(entries)) {
+      if (key.startsWith("player:") && entry?.playerTabId === tabId) await api.storage.session.remove(key);
+    }
   }
 
   return { dispatch, recordResponse, tabUpdated, tabRemoved };

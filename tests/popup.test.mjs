@@ -103,3 +103,30 @@ test("unsupported pages explain where to open the extension", async () => {
     assert.match(document.querySelector("#unsupported").textContent, /课程回放/);
   } finally { dom.window.close(); }
 });
+
+test("the popup opens synchronized playback in a new tab without starting a download", async () => {
+  const { document, dom, createdTabs, downloadCalls } = await mount();
+  try {
+    await until(() => document.querySelectorAll(".media-card").length === 2 && !document.querySelector("#open-player").disabled);
+    document.querySelector("#open-player").click();
+    await until(() => document.querySelector("#notice").textContent.includes("同步播放"));
+    assert.match(createdTabs[0].url, /player\.html\?id=/);
+    assert.equal(downloadCalls.length, 0);
+  } finally { dom.window.close(); }
+});
+
+test("123 cloud assistance copies full links and opens the official site without claiming an upload", async () => {
+  const fixture = await mount();
+  const { document, dom, createdTabs, downloadCalls } = fixture;
+  try {
+    await until(() => document.querySelectorAll(".media-card").length === 2 && !document.querySelector("#copy-cloud-links").disabled);
+    document.querySelector("#copy-cloud-links").click();
+    await until(() => document.querySelector("#notice").textContent.includes("当前尚未上传"));
+    assert.equal(fixture.clipboard().split("\n").length, 2);
+    assert.ok(fixture.clipboard().split("\n").every((line) => line.includes("auth_key=")));
+    document.querySelector("#open-cloud").click();
+    await until(() => createdTabs.length === 1);
+    assert.equal(createdTabs[0].url, "https://yun.123pan.cn/");
+    assert.equal(downloadCalls.length, 0);
+  } finally { dom.window.close(); }
+});
