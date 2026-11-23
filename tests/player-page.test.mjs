@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { SyncPlayer, recordingOffset } from "../extension/lib/sync-player.js";
 import { mediaKey, formatClock } from "../extension/lib/media.js";
 import { bindSubtitles } from "../extension/lib/subtitles.js";
+import { bindPairedSubtitles } from "../extension/lib/paired-subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
 import { bindTranscript } from "../extension/lib/transcript.js";
 import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
@@ -12,13 +13,13 @@ import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
 const html = await readFile(new URL("../extension/player.html", import.meta.url), "utf8");
 const code = (await readFile(new URL("../extension/player.js", import.meta.url), "utf8")).replace(/^import .+;\r?$/gm, "");
 const flush = () => new Promise((done) => setTimeout(done, 15));
-async function page({ labels = ["画面 1", "画面 2"], captionResult = { ok: false, error: "本次回放没有可用的课程字幕" } } = {}) {
+async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), prepareMedia } = {}) {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   const captionRequests = [];
   dom.window.chrome = { runtime: { async sendMessage(message) {
-    if (message.type === "GET_SUBTITLES") { captionRequests.push(message.key); return captionResult; }
+    if (message.type === "GET_SUBTITLES") { captionRequests.push(message.key); return captionResult(message.key); }
     return { ok: true, courseTitle: "数据库系统", media: snapshot.media.map((item, index) => ({ ...item, key: mediaKey(item.url), label: labels[index], url: mediaUrl(index ? "CloudIPC-demo-b" : "CloudIPC-demo-a", stamp) })) };
   } } };
   dom.window.HTMLMediaElement.prototype.load = function() { this.currentTime = 0; queueMicrotask(() => this.dispatchEvent(new dom.window.Event("loadedmetadata"))); };
@@ -29,6 +30,7 @@ async function page({ labels = ["画面 1", "画面 2"], captionResult = { ok: f
     Object.defineProperty(video, "duration", { get: () => 120 });
     Object.defineProperty(video, "readyState", { get: () => 4 });
   });
+  prepareMedia?.(dom.window);
   dom.window.eval(code);
   await flush();
   return { dom, document: dom.window.document, videos, captionRequests, refreshSignature() { stamp += 300; } };
@@ -115,7 +117,7 @@ test("the labelled slide opens large and swapping views preserves both streams, 
   assert.deepEqual(videos.map(v => v.currentTime), [31, 31]);
   assert.deepEqual(videos.map(v => v.playbackRate), [2.5, 2.5]);
   assert.deepEqual(videos.map(v => v.muted), [false, true]);
-  assert.deepEqual(captionRequests, []);
+  assert.deepEqual(captionRequests, sources.map(mediaKey));
   get("toggle-review").click();
   await flush();
   assert.equal(get("review-source").value, "0");
@@ -123,7 +125,7 @@ test("the labelled slide opens large and swapping views preserves both streams, 
   get("close-review").click();
   assert.equal(document.activeElement, get("toggle-review"));
   get("toggle-review").click();
-  assert.equal(captionRequests.length, 1);
+  assert.equal(captionRequests.length, 2);
 });
 
 test("opening, searching and seeking secondary-camera captions respects offset, overlap and track selection", async (t) => {
@@ -132,20 +134,33 @@ test("opening, searching and seeking secondary-camera captions respects offset, 
     { startTime: 18, endTime: 26, text: "主键与外键" },
     { startTime: 31, endTime: 40, text: "学生表" }
   ];
-  const { dom, document, videos, captionRequests } = await page({ labels: ["教室", "课件"], captionResult: { ok: true, cues } });
+  let track, copy;
+  const { dom, document, videos, captionRequests } = await page({
+    labels: ["教室", "课件"],
+    captionResult: key => key.includes("demo-b") ? { ok: true, cues } : { ok: false, error: "此画面没有独立字幕" },
+    prepareMedia(win) {
+      track = Object.assign(new win.EventTarget(), { cues, activeCues: [], mode: "disabled" });
+      Object.defineProperty(win.HTMLTrackElement.prototype, "track", { get: () => track });
+      win.URL.createObjectURL = () => "blob:course-captions";
+      win.URL.revokeObjectURL = () => {};
+      win.VTTCue = class { constructor(startTime, endTime, text) { Object.assign(this, { startTime, endTime, text }); } };
+      win.HTMLMediaElement.prototype.addTextTrack = () => {
+        copy = { cues: [], addCue(c) { this.cues.push(c); }, removeCue(c) { this.cues.splice(this.cues.indexOf(c), 1); } };
+        return copy;
+      };
+    }
+  });
   t.after(() => close(dom));
-  const { Event, EventTarget, HTMLTrackElement, URL } = dom.window;
-  const track = Object.assign(new EventTarget(), { cues, activeCues: [], mode: "disabled" });
-  Object.defineProperty(HTMLTrackElement.prototype, "track", { get: () => track });
-  URL.createObjectURL = () => "blob:course-captions";
-  URL.revokeObjectURL = () => {};
+  const { Event } = dom.window;
   const get = (id) => document.getElementById(id);
   const offset = get("offset");
   offset.value = "5"; offset.dispatchEvent(new Event("change"));
   get("toggle-review").click(); await flush();
   assert.equal(get("review-source").value, "1");
-  assert.deepEqual(captionRequests, [mediaKey(videos[1].src)]);
+  assert.deepEqual(captionRequests, videos.map(video => mediaKey(video.src)));
   videos[1].querySelector("track").dispatchEvent(new Event("load"));
+  assert.equal(copy.mode, "showing");
+  assert.deepEqual(copy.cues.map(c => c.startTime), [13, 26]);
   const entries = [...get("cue-list").querySelectorAll("button")];
   assert.equal(entries.length, 3);
   assert.equal(entries[0].disabled, true);
@@ -160,19 +175,27 @@ test("opening, searching and seeking secondary-camera captions respects offset, 
   assert.equal(entries[1].getAttribute("aria-current"), "true");
   get("toggle-captions").click();
   assert.equal(track.mode, "hidden");
+  assert.equal(copy.mode, "hidden");
   assert.equal(get("cue-list").querySelectorAll("button").length, 3);
   assert.equal(query.value, "外键");
   assert.equal(get("toggle-captions").getAttribute("aria-pressed"), "false");
   get("toggle-captions").click();
   assert.equal(track.mode, "showing");
+  assert.equal(copy.mode, "showing");
   query.value = "无匹配"; query.dispatchEvent(new Event("input"));
   assert.match(get("cue-empty").textContent, /没有匹配/);
   get("close-review").click(); get("toggle-review").click();
   assert.equal(query.value, "无匹配");
+  get("review-source").value = "0"; get("review-source").dispatchEvent(new Event("change"));
+  assert.match(get("shared-caption-note").textContent, /课件/);
+  query.value = ""; query.dispatchEvent(new Event("input"));
+  entries[2].click();
+  assert.deepEqual(videos.map(v => v.currentTime), [26, 31]);
   const mode = get("subtitles-1").querySelector("select");
   mode.value = "off"; mode.dispatchEvent(new Event("change"));
   assert.equal(get("cue-list").children.length, 0);
   assert.equal(get("cue-list").hidden, true);
+  assert.equal(copy.mode, "disabled");
   get("review-source").value = "0"; get("review-source").dispatchEvent(new Event("change"));
   assert.equal(captionRequests.length, 2);
 });

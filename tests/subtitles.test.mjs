@@ -4,11 +4,49 @@ import { JSDOM } from "jsdom";
 import { mediaKey } from "../extension/lib/media.js";
 import { readCourseSubtitles } from "../extension/lib/course-subtitles.js";
 import { bindSubtitles, toWebVtt } from "../extension/lib/subtitles.js";
+import { bindPairedSubtitles } from "../extension/lib/paired-subtitles.js";
 import { mediaUrl, pageUrl } from "./fixtures.mjs";
 
 const endpoint = new URL("getVideoSubtitles2Vtt?workDetailId=200", pageUrl).href;
 const vtt = "WEBVTT\n\n00:00.500 --> 00:02.000\n第一句\n\n00:04.000 --> 00:06.000\n第二句";
 const srt = "\uFEFF1\r\n00:00:01,500 --> 00:00:02,100\r\n第一行\r\n第二行\r\n";
+
+test("paired captions keep independent sources, share a single file and retime a reusable native copy", () => {
+  class Cue { constructor(startTime, endTime, text) { Object.assign(this, { startTime, endTime, text }); } }
+  const source = (vtt, mode = "course") => ({ mode, vtt, track: { cues: [new Cue(1, 4, vtt), new Cue(5, 9, vtt)] } });
+  const videos = [0, 1].map(() => ({
+    copies: [], ownerDocument: { defaultView: { VTTCue: Cue } },
+    addTextTrack() {
+      const track = { cues: [], addCue(c) { this.cues.push(c); }, removeCue(c) { this.cues.splice(this.cues.indexOf(c), 1); } };
+      this.copies.push(track); return track;
+    }
+  }));
+  const controls = ["教室独立字幕", "课件独立字幕"].map(text => ({ source: source(text), setDisplay(visible) { this.visible = visible; } }));
+  const update = bindPairedSubtitles(videos, controls);
+  assert.deepEqual(update(2, true), [0, 1]);
+  assert.ok(controls.every(c => c.visible));
+  assert.ok(videos.every(v => !v.copies.length));
+
+  controls[1].source = source("教室独立字幕");
+  assert.deepEqual(update(2, true), [0, 0]);
+  const [copy] = videos[1].copies;
+  assert.equal(copy.mode, "showing");
+  assert.deepEqual(copy.cues.map(c => c.startTime), [3, 7]);
+  const unchanged = copy.cues[0];
+  update(2, false);
+  assert.equal(copy.mode, "hidden");
+  assert.equal(copy.cues[0], unchanged);
+  update(-6, true);
+  assert.deepEqual(copy.cues.map(c => [c.startTime, c.endTime]), [[0, 3]]);
+
+  controls[1].source = source("本地字幕", "file");
+  assert.deepEqual(update(2, true), [1, 1]);
+  assert.equal(copy.mode, "disabled");
+  assert.deepEqual(videos[0].copies[0].cues.map(c => [c.startTime, c.text]), [[0, "本地字幕"], [3, "本地字幕"]]);
+  controls[0].source = source("另一个文件", "file");
+  assert.deepEqual(update(2, true), [0, 1]);
+  assert.ok(videos.every(v => v.copies.length === 1 && !v.copies[0].cues.length));
+});
 
 function frame(html, resources, responses = {}) {
   const dom = new JSDOM(html, { url: pageUrl, runScripts: "outside-only" });

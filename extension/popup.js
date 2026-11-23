@@ -13,6 +13,8 @@ let pollInFlight = false;
 let titleDirty = false;
 let savingTitle;
 let savingOptions;
+let includeNewFiles = true;
+let nextCardId = 0;
 
 async function send(type, fields = {}) {
   const result = await chrome.runtime.sendMessage({ type, tabId, ...fields });
@@ -26,10 +28,34 @@ function notice(message = "", error = false) {
   $("notice").classList.toggle("error", error);
 }
 
+function selectedFiles() {
+  return (state?.media || []).filter(item => cards.get(item.key)?.querySelector(".file-check").checked);
+}
+
+function fileSize(item) {
+  return item.size > 0 ? item.size : Math.max(0, item.download?.totalBytes || 0);
+}
+
+function updateSelection() {
+  const selected = selectedFiles();
+  const total = state?.media?.length || 0;
+  const all = $("select-all");
+  all.checked = total > 0 && selected.length === total;
+  all.indeterminate = selected.length > 0 && selected.length < total;
+  all.disabled = !total;
+  const bytes = selected.reduce((sum, item) => sum + fileSize(item), 0);
+  const unknown = selected.filter(item => !fileSize(item)).length;
+  let size = bytes ? formatBytes(bytes) : "0 B";
+  if (unknown) size = bytes ? `至少 ${size}（${unknown} 项大小待获取）` : "大小待获取";
+  const summary = `已选 ${selected.length} 个文件 · ${size}`;
+  if ($("selection-total").textContent !== summary) $("selection-total").textContent = summary;
+  $("download-selected").disabled = busy || !selected.length;
+}
+
 async function act(operation) {
   if (busy) return;
   busy = true;
-  $("download-all").disabled = true;
+  $("download-selected").disabled = true;
   $("open-player").disabled = true;
   $("scan").disabled = true;
   try {
@@ -41,7 +67,7 @@ async function act(operation) {
   } finally {
     busy = false;
     $("scan").disabled = false;
-    $("download-all").disabled = !state?.media?.length;
+    updateSelection();
     $("open-player").disabled = (state?.media?.length || 0) < 2;
   }
 }
@@ -87,6 +113,18 @@ function updateProgress(card, media) {
 function makeCard(key) {
   const card = document.importNode($("media-template").content.firstElementChild, true);
   card.dataset.key = key;
+  const check = card.querySelector(".file-check");
+  check.checked = includeNewFiles;
+  check.addEventListener("change", () => { updateSelection(); includeNewFiles = $("select-all").checked; });
+  const details = card.querySelector(".file-details");
+  const more = card.querySelector(".file-tools");
+  details.id = "file-details-" + ++nextCardId;
+  more.setAttribute("aria-controls", details.id);
+  more.addEventListener("click", () => {
+    details.hidden = !details.hidden;
+    more.setAttribute("aria-expanded", String(!details.hidden));
+    if (details.hidden && !card.querySelector(".preview").hidden) card.querySelector(".preview-button").click();
+  });
   const video = card.querySelector("video");
   card.subtitles = bindSubtitles(card.querySelector(".subtitles"), video, (key) => send("GET_SUBTITLES", { key }));
   card.subtitles.setSource(key);
@@ -100,6 +138,7 @@ function makeCard(key) {
   card.querySelector(".preview-button").addEventListener("click", () => {
     const panel = card.querySelector(".preview");
     panel.hidden = !panel.hidden;
+    card.querySelector(".preview-button").setAttribute("aria-expanded", String(!panel.hidden));
     card.querySelector(".preview-button").textContent = panel.hidden ? "预览画面" : "收起预览";
     if (panel.hidden) {
       video.pause();
@@ -108,6 +147,7 @@ function makeCard(key) {
       card.querySelector(".preview-error").hidden = true;
       if (card.player) card.player.url = card.media.url;
       else card.player = createLecturePlayer(video, card.media.url);
+      card.subtitles.ensureCourse();
       video.play().catch(() => {});
     }
   });
@@ -143,24 +183,29 @@ function render(next) {
   $("summary").textContent = next.media.length === 1 ? "已识别 1 路，可预览或下载。同步看课需要两路画面。" :
     next.media.length ? `已识别 ${next.media.length} 路画面` : "等待回放视频加载";
   $("empty").hidden = next.media.length > 0;
-  $("download-all").disabled = busy || !next.media.length;
   $("open-player").disabled = busy || next.media.length < 2;
   const keys = new Set(next.media.map((media) => media.key));
   for (const [key, card] of cards) if (!keys.has(key)) { card.subtitles.setSource(""); card.player?.destroy(); card.remove(); cards.delete(key); }
+  if (!cards.size) includeNewFiles = true;
   next.media.forEach((media, index) => {
     let card = cards.get(media.key);
     if (!card) { card = makeCard(media.key); cards.set(media.key, card); }
     card.media = media;
-    card.querySelector(".channel-number").textContent = String(index + 1).padStart(2, "0");
+    card.querySelector(".file-label").textContent = media.label;
+    card.querySelector(".file-check").setAttribute("aria-label", `选择${media.label}`);
+    card.querySelector(".file-tools").setAttribute("aria-label", `${media.label}的操作`);
     const name = card.querySelector(".channel-name");
     if (document.activeElement !== name) name.value = media.label;
     const info = recordingInfo(media.url);
-    card.querySelector(".media-facts").textContent = [info.date, media.width && media.height ? `${media.width} × ${media.height}` : "", formatDuration(media.duration), formatBytes(media.size)].filter(Boolean).join("  ·  ");
-    card.querySelector(".channel-number").title = media.camera || info.camera || "";
+    const facts = card.querySelector(".media-facts");
+    facts.textContent = ["MP4", formatDuration(media.duration), media.width && media.height ? `${media.width} × ${media.height}` : ""].filter(Boolean).join(" · ");
+    facts.title = [info.date, media.camera || info.camera].filter(Boolean).join(" · ");
+    card.querySelector(".file-size").textContent = formatBytes(fileSize(media));
     updateProgress(card, media);
     const position = $("media-list").children[index];
     if (position !== card) $("media-list").insertBefore(card, position || null);
   });
+  updateSelection();
 }
 
 $("course-name").addEventListener("input", () => { titleDirty = true; });
@@ -176,11 +221,17 @@ $("scan").addEventListener("click", () => { void act(async () => {
   notice(result.notice || (result.media.length ? "已更新画面。预览后可以修改画面名称。" : "请在回放页点击播放，再重新识别。"));
   return result;
 }); });
-$("download-all").addEventListener("click", () => { void act(async () => {
+$("select-all").addEventListener("change", () => {
+  includeNewFiles = $("select-all").checked;
+  for (const card of cards.values()) card.querySelector(".file-check").checked = includeNewFiles;
+  updateSelection();
+});
+$("download-selected").addEventListener("click", () => { void act(async () => {
+  const keys = selectedFiles().map(item => item.key);
   await persistTitle();
   if (savingOptions) await savingOptions;
   await Promise.all([...cards.values()].map((card) => card.pendingName));
-  const result = await send("DOWNLOAD_ALL");
+  const result = await send("DOWNLOAD_SELECTED", { keys });
   notice(result.failed ? `有 ${result.failed} 路下载未开始，请查看画面下方提示。` : result.started ? `已开始 ${result.started} 路下载，可以关闭这个面板。` : "画面已经在下载中，可在浏览器下载列表查看。", !!result.failed);
   return result;
 }); });

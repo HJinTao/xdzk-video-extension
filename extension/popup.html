@@ -27,14 +27,16 @@
 
     <div id="workspace" hidden>
       <section class="course-section">
-        <label for="course-name" class="eyebrow">当前课程 <span>可修改保存名称</span></label>
-        <input id="course-name" class="course-name" type="text" maxlength="60" autocomplete="off" value="课程录播">
-        <div class="course-meta"><span id="summary">正在识别当前页面…</span></div>
-        <button id="open-player" class="button primary sync-open" disabled><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>同步看课</button>
+        <div class="course-heading">
+          <label for="course-name" class="eyebrow">课程名称</label>
+          <input id="course-name" class="course-name" type="text" maxlength="60" autocomplete="off" title="修改课程保存名称" value="课程录播">
+          <p id="summary" class="course-meta">正在识别当前页面…</p>
+        </div>
+        <button id="open-player" class="button sync-open" disabled><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>同步看课</button>
       </section>
 
       <div class="toolbar">
-        <h2>录播画面</h2>
+        <h2 id="files-heading">选择要下载的画面</h2>
         <button id="scan" class="button quiet"><span aria-hidden="true">↻</span> 重新识别</button>
       </div>
 
@@ -44,21 +46,34 @@
         <p>在回放页点击播放，再点“重新识别”。<br>双画面课程可以分别播放两路画面。</p>
       </section>
 
-      <div id="media-list" class="media-list"></div>
+      <div id="media-list" class="media-list" role="list" aria-labelledby="files-heading"></div>
 
       <footer class="footer">
-        <button id="download-all" class="button secondary download-all" disabled><svg viewBox="0 0 20 20" class="icon" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4"/></svg>下载全部画面</button>
+        <div class="selection-summary">
+          <label class="select-all"><input id="select-all" type="checkbox" disabled>全选</label>
+          <span id="selection-total" role="status">已选 0 个文件 · 0 B</span>
+        </div>
+        <button id="download-selected" class="button primary" disabled><svg viewBox="0 0 20 20" class="icon" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4"/></svg>下载所选画面</button>
         <div class="footer-note"><label class="save-option"><input id="save-as" type="checkbox"> 每次选择保存位置</label><button id="open-downloads" class="text-button">查看下载 ↗</button></div>
       </footer>
     </div>
   </main>
 
   <template id="media-template">
-    <article class="media-card">
-      <div class="card-heading"><span class="channel-number"></span><input class="channel-name" aria-label="画面名称" maxlength="32" autocomplete="off"><span class="file-type">MP4</span></div>
-      <div class="media-facts"></div>
-      <div class="preview" hidden><div class="lecture-player" role="group" aria-label="预览播放器"><video preload="none" playsinline></video></div><div class="subtitles" role="group" aria-label="预览字幕"></div><div class="speed-control"></div><p class="preview-error" hidden>预览暂时不可用。请刷新回放页面，再重新识别视频。</p></div>
-      <div class="card-actions"><button class="button quiet preview-button">预览画面</button><button class="button quiet copy-button">复制链接</button><button class="button secondary download-button">下载视频 <span aria-hidden="true">↓</span></button></div>
+    <article class="media-card" role="listitem">
+      <div class="file-row">
+        <label class="file-choice">
+          <input class="file-check" type="checkbox" checked>
+          <span class="file-info"><strong class="file-label"></strong><small class="media-facts"></small></span>
+          <span class="file-size"></span>
+        </label>
+        <button type="button" class="file-tools" aria-expanded="false" aria-label="画面操作" title="画面操作"><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></button>
+      </div>
+      <div class="file-details" hidden>
+        <label class="rename">保存名称<input class="channel-name" maxlength="32" autocomplete="off"></label>
+        <div class="card-actions"><button type="button" class="button preview-button" aria-expanded="false">预览画面</button><button type="button" class="button copy-button">复制链接</button><button type="button" class="button download-button">下载视频</button></div>
+        <div class="preview" hidden><div class="lecture-player" role="group" aria-label="预览播放器"><video preload="none" playsinline></video></div><div class="subtitles" role="group" aria-label="预览字幕"></div><div class="speed-control"></div><p class="preview-error" hidden>预览暂时不可用。请刷新回放页面，再重新识别视频。</p></div>
+      </div>
       <div class="download-status" hidden><progress max="100" value="0" aria-label="下载进度"></progress><div class="progress-line"><span class="progress-label"></span><button class="text-button control-button"></button></div></div>
       <p class="card-error" role="status" hidden></p>
     </article>

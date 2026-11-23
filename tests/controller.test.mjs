@@ -51,6 +51,19 @@ test("only trusted extension UI can initiate downloads and control its own tasks
   assert.equal(downloadCalls.length, 0);
 });
 
+test("a stale or empty batch cannot silently start a different set of downloads", async () => {
+  const { api, downloadCalls } = createApi();
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  const select = (keys) => controller.dispatch({ type: "DOWNLOAD_SELECTED", tabId: 1, keys }, popupSender);
+  const key = mediaKey(mediaUrl());
+  await assert.rejects(select([]), /勾选/);
+  await assert.rejects(select([key, "old"]), /清单/);
+  assert.equal(downloadCalls.length, 0);
+  assert.equal((await select([key, key])).started, 1);
+  assert.equal(downloadCalls.length, 1);
+});
+
 test("ignores failures and unrelated tabs, clears navigation state and removes closed tabs", async () => {
   const { api, session } = createApi();
   const controller = createController(api);

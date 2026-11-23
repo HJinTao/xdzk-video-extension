@@ -30,6 +30,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
   let key = "";
   let revision = 0;
   let tried = false;
+  let loading = false;
   let display = true;
   let active, pending, course, local;
 
@@ -48,23 +49,26 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
   }
   function start() {
     revision++;
+    loading = false;
     remove(pending);
     pending = null;
     notify();
     return revision;
   }
   function fail(text) {
+    loading = false;
     remove(pending);
     pending = null;
     select.value = selectedTrack() ? active.mode : "off";
     notify(text);
+    onTrackChange(selectedTrack());
   }
   function attach(mode, data, version) {
     const element = doc.createElement("track");
     element.kind = "captions";
     element.label = data.label;
     const url = view.URL.createObjectURL(new view.Blob([data.vtt], { type: "text/vtt;charset=utf-8" }));
-    pending = { element, url, mode };
+    pending = { element, url, mode, data };
     element.addEventListener("error", () => {
       if (revision === version && pending?.element === element) fail("字幕加载失败，请重新选择课程字幕或导入本地文件。");
     });
@@ -74,6 +78,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
       remove(active);
       active = pending;
       pending = null;
+      loading = false;
       if (mode === "file") {
         local = data;
         let option = select.querySelector('[value="file"]');
@@ -94,6 +99,8 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     const mode = select.value;
     const version = start();
     if (mode === "off") { remove(active); active = null; onTrackChange(null); return; }
+    loading = true;
+    onTrackChange(selectedTrack());
     try {
       let data = mode === "file" ? local : course;
       if (!data) {
@@ -113,6 +120,8 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     if (!file) return;
     tried = true;
     const version = start();
+    loading = true;
+    onTrackChange(selectedTrack());
     try {
       if (!/\.(srt|vtt)$/i.test(file.name)) throw new Error("请选择 SRT 或 VTT 字幕文件。");
       const text = await file.text();
@@ -128,12 +137,16 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
   });
   return {
     get track() { return selectedTrack(); },
+    get source() {
+      const track = selectedTrack();
+      return track ? { track, mode: active.mode, vtt: active.data.vtt } : null;
+    },
+    get loading() { return loading; },
     setDisplay(visible) {
+      const track = selectedTrack();
       display = visible;
-      if (active) {
-        active.element.track.mode = visible ? "showing" : "hidden";
-        onTrackChange(active.element.track);
-      }
+      const mode = visible ? "showing" : "hidden";
+      if (track && track.mode !== mode) track.mode = mode;
     },
     ensureCourse() {
       if (!key || tried) return;

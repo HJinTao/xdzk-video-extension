@@ -1,5 +1,6 @@
 import { SyncPlayer, recordingOffset } from "./lib/sync-player.js";
 import { bindSubtitles } from "./lib/subtitles.js";
+import { bindPairedSubtitles } from "./lib/paired-subtitles.js";
 import { createLecturePlayer } from "./lib/lecture-player.js";
 import { bindPlaybackSpeed } from "./lib/playback-speed.js";
 import { bindTranscript } from "./lib/transcript.js";
@@ -12,6 +13,10 @@ let engine;
 let media = [];
 let primary = 0;
 let reviewIndex = 0;
+let reviewClock = 0;
+let captionOffset = 0;
+let captionsEnabled = true;
+let changingSources = false;
 let openedReview = false;
 let editingTimeline = false;
 let savedAudio = 0;
@@ -19,20 +24,38 @@ let savedRate = 1;
 const players = [];
 const speedControl = bindPlaybackSpeed($("speed-control"), (value) => { savedRate = value; engine?.setRate(value); });
 const transcript = bindTranscript($("review"), (seconds) => {
-  if (engine?.range()) engine.seek(seconds - (reviewIndex === 1 ? engine.offset : 0));
+  if (engine?.range()) engine.seek(seconds - (reviewClock === 1 ? engine.offset : 0));
 });
 const subtitles = videos.map((video, index) => bindSubtitles($("subtitles-" + index), video, async (key) => {
   const result = await chrome.runtime.sendMessage({ type: "GET_SUBTITLES", id, key });
   if (!result?.ok) throw new Error(result?.error || "读取课程字幕失败，请重试。");
   return result;
-}, (track) => {
-  if (index === reviewIndex) transcript.setTrack(track);
-  const showing = subtitles.some((control) => control.track?.mode === "showing");
-  $("toggle-captions").setAttribute("aria-pressed", String(showing));
-  $("caption-state").textContent = showing ? "开" : "关";
-}));
+}, refreshCaptions));
+const updateCaptionPair = bindPairedSubtitles(videos, subtitles);
+document.querySelectorAll('.subtitle-mode option[value="off"]').forEach(option => { option.textContent = "跟随另一路"; });
 
 function message(text = "") { $("message").textContent = text; $("message").hidden = !text; }
+
+function refreshCaptions() {
+  if (changingSources) return;
+  const origins = updateCaptionPair(captionOffset, captionsEnabled);
+  const origin = origins[reviewIndex];
+  reviewClock = origin ?? reviewIndex;
+  transcript.setWindow(engine?.range(), reviewClock === 1 ? captionOffset : 0);
+  transcript.setTrack(origin === null ? null : subtitles[origin].track);
+  const sharing = origin !== null && origin !== reviewIndex;
+  $("shared-caption-note").hidden = !sharing;
+  if (sharing) {
+    const label = subtitles[origin].track.label || "课程字幕";
+    const clockName = $("screen-name-" + origin).textContent;
+    $("shared-caption-note").textContent = `两路共用「${label}」，点击字幕会按「${clockName}」的时间码跳转。`;
+  }
+  const available = origins.some(index => index !== null);
+  const loading = subtitles.some(control => control.loading);
+  $("caption-state").textContent = !captionsEnabled ? "关" : available ? "开" : loading ? "读取中" : "待导入";
+  $("toggle-captions").setAttribute("aria-pressed", String(captionsEnabled));
+  $("caption-hint").hidden = !engine || !captionsEnabled || available || loading;
+}
 
 function setPrimary(index) {
   primary = index;
@@ -45,9 +68,7 @@ function selectReview(index) {
   reviewIndex = index;
   $("review-source").value = String(index);
   document.querySelectorAll("[data-track-panel]").forEach((panel) => { panel.hidden = Number(panel.dataset.trackPanel) !== index; });
-  transcript.setWindow(engine?.range(), index === 1 ? engine?.offset : 0);
-  transcript.setTrack(subtitles[index].track);
-  if (!$("review").hidden) subtitles[index].ensureCourse();
+  refreshCaptions();
 }
 
 function showReview(open) {
@@ -70,7 +91,11 @@ function stateChanged(state) {
   $("play").textContent = state.playing ? "暂停" : "播放";
   const status = state.buffering ? "缓冲中，等待两路画面" : !ready ? "等待两路视频就绪或时间重叠" : state.playing ? "两路同步播放中" : "两路已同步";
   if ($("sync-status").textContent !== status) $("sync-status").textContent = status;
-  transcript.setWindow(state.range, reviewIndex === 1 ? state.offset : 0);
+  if (Number.isFinite(state.offset) && captionOffset !== state.offset) {
+    captionOffset = state.offset;
+    refreshCaptions();
+  }
+  transcript.setWindow(state.range, reviewClock === 1 ? captionOffset : 0);
   if (ready) {
     $("timeline").min = state.range.start;
     $("timeline").max = state.range.end;
@@ -87,6 +112,7 @@ function loadPair({ preserve = false } = {}) {
   const previousOffset = preserve ? engine?.offset : undefined;
   const rate = engine?.rate || savedRate;
   engine?.destroy();
+  engine = null;
   const pair = [$("source-0").value, $("source-1").value].map((key) => media.find((item) => item.key === key));
   const valid = pair.every(Boolean) && pair[0].key !== pair[1].key;
   for (const name of ["swap-views", "toggle-review", "toggle-captions"]) $(name).disabled = !valid;
@@ -96,9 +122,11 @@ function loadPair({ preserve = false } = {}) {
     $("audio-name-" + index).textContent = name;
     $("review-source").options[index].textContent = name;
   });
+  changingSources = true;
   subtitles.forEach((control, index) => control.setSource(valid ? pair[index].key : ""));
+  changingSources = false;
   if (!valid) {
-    engine = null;
+    refreshCaptions();
     if (!$("review").hidden) showReview(false);
     players.forEach((player) => player.reset());
     stateChanged({ time: 0, range: null, playing: false, rate: savedRate });
@@ -121,6 +149,7 @@ function loadPair({ preserve = false } = {}) {
   engine.setOffset(offset);
   engine.setAudio(savedAudio);
   engine.setRate(rate);
+  subtitles.forEach(control => control.ensureCourse());
   selectReview(openedReview ? reviewIndex : primary);
   if (preserve) {
     const generation = engine;
@@ -165,15 +194,17 @@ $("refresh").addEventListener("click", () => { void load({ refresh: true }); });
 $("swap-views").addEventListener("click", () => setPrimary(1 - primary));
 $("toggle-review").addEventListener("click", () => showReview($("review").hidden));
 $("toggle-captions").addEventListener("click", () => {
-  const visible = $("toggle-captions").getAttribute("aria-pressed") !== "true";
-  subtitles.forEach((control) => control.setDisplay(visible));
-  if (visible && !subtitles.some((control) => control.track)) showReview(true);
+  captionsEnabled = !captionsEnabled;
+  refreshCaptions();
 });
 $("close-review").addEventListener("click", () => showReview(false));
 $("review-source").addEventListener("change", () => selectReview(Number($("review-source").value)));
 window.addEventListener("pagehide", () => {
   engine?.destroy();
+  changingSources = true;
   subtitles.forEach((control) => control.setSource(""));
+  updateCaptionPair(0, false);
+  transcript.setTrack(null);
   players.forEach((player) => player.destroy());
 });
 void load();

@@ -28,7 +28,7 @@ function pixel(x, y) {
   const dx = Math.max(3.8 - x, 0, x - 20.2), dy = Math.max(3.8 - y, 0, y - 20.2);
   if (Math.hypot(dx, dy) > 3.5) return [0, 0, 0, 0];
   const ink = strokes.some((line) => distance(x, y, ...line) < .9);
-  return ink ? [48, 40, 29, 255] : [246, 207, 102, 255];
+  return ink ? [45, 87, 147, 255] : [212, 231, 255, 255];
 }
 await mkdir(resolve(import.meta.dirname, "../extension/icons"), { recursive: true });
 for (const size of [16, 32, 48, 128]) {

@@ -1,23 +1,46 @@
 :root {
   color-scheme: light;
-  --ink: #30281d;
-  --muted: #695d49;
-  --accent: #794e12;
-  --sun: #f6cf66;
-  --sun-hover: #edc04d;
-  --wash: #fff8e5;
-  --paper: #fffdf7;
-  --tint: #fff0c4;
-  --line: #e3d6b5;
-  --strong-line: #9b835b;
-  --error: #943e26;
-  --film: #201d1a;
+  --ink: #202f47;
+  --muted: #51657e;
+  --accent: #2f609f;
+  --action: #3669ae;
+  --action-hover: #285794;
+  --wash: #f4f8ff;
+  --paper: #ffffff;
+  --tint: #eaf2ff;
+  --line: #d7e3f3;
+  --strong-line: #8097b6;
+  --error: #973b38;
+  --film: #121b2a;
+  --grid-step: 100px;
   font-family: "Inter", "Segoe UI", "Microsoft YaHei UI", sans-serif;
   color: var(--ink);
-  background: var(--wash);
+  min-height: 100%;
+  background-color: var(--wash);
+  background-image:
+    radial-gradient(circle at 1px 1px, #bbd5f3 1.5px, transparent 2px),
+    linear-gradient(90deg, #dce8f766 1px, transparent 1px),
+    linear-gradient(#dce8f766 1px, transparent 1px),
+    linear-gradient(145deg, #f1f5ff, #f9fcff);
+  background-size: var(--grid-step) var(--grid-step), var(--grid-step) var(--grid-step), var(--grid-step) var(--grid-step), 100% 100%;
+  background-position: 24px 20px, 24px 20px, 24px 20px, 0 0;
 }
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; position: relative; isolation: isolate; }
+body::before, body::after { content: ""; position: absolute; z-index: -1; pointer-events: none; }
+body::before {
+  top: 14px; right: 14px; width: clamp(90px, 18vw, 196px); height: 76px;
+  background: radial-gradient(circle, #85afe9 1px, transparent 1.2px) left top / 8px 8px;
+  --bands: linear-gradient(#000 0 0) 0 0 / 100% 15px no-repeat,
+    linear-gradient(#000 0 0) 0 24px / 48% 12px no-repeat,
+    linear-gradient(#000 0 0) 0 48px / 68% 15px no-repeat;
+  -webkit-mask: var(--bands); mask: var(--bands);
+}
+body::after {
+  top: 11px; left: calc(var(--grid-step) * 2 + 16px); width: 18px; height: 18px;
+  background: #bfdafa;
+  clip-path: polygon(50% 0, 62% 36%, 100% 50%, 63% 62%, 50% 100%, 37% 63%, 0 50%, 37% 37%);
+}
 button, select, input { font: inherit; }
 button, select, summary { cursor: pointer; }
 button:disabled, select:disabled { cursor: default; opacity: .55; }

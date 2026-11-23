@@ -52,8 +52,9 @@
               <label><input type="radio" name="audio" value="-1">静音</label>
             </fieldset>
             <div id="speed-control" class="speed-control" data-select-id="rate"></div>
-            <button id="toggle-captions" type="button" aria-label="画面字幕" aria-pressed="false" disabled>画面字幕 <span id="caption-state">关</span></button>
+            <button id="toggle-captions" type="button" aria-label="双路字幕" aria-pressed="true" disabled>双路字幕 <span id="caption-state">读取中</span></button>
           </div>
+          <p id="caption-hint" hidden>暂无可用字幕，可在「字幕复习」中导入 SRT 或 VTT。</p>
         </section>
         <details class="source-settings">
           <summary>视频源与时间校准</summary>
@@ -68,9 +69,10 @@
       </div>
       <aside id="review" aria-labelledby="review-heading" hidden>
         <header class="review-head"><h2 id="review-heading">字幕复习</h2><button type="button" id="close-review" aria-label="收起字幕复习"><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
-        <label class="review-source">字幕对应画面<select id="review-source"><option value="0">画面 1</option><option value="1">画面 2</option></select></label>
+        <label class="review-source">复习画面<select id="review-source"><option value="0">画面 1</option><option value="1">画面 2</option></select></label>
         <div data-track-panel="0"><div id="subtitles-0" class="subtitles" role="group" aria-label="画面 1 字幕" hidden></div></div>
         <div data-track-panel="1" hidden><div id="subtitles-1" class="subtitles" role="group" aria-label="画面 2 字幕" hidden></div></div>
+        <p id="shared-caption-note" hidden></p>
         <div class="transcript-tools" hidden>
           <label for="cue-search">搜索字幕</label>
           <input id="cue-search" type="search" autocomplete="off" placeholder="输入关键词或时间">

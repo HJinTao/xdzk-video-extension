@@ -6,7 +6,7 @@ import { createController } from "../extension/lib/controller.js";
 import { formatBytes, formatDuration, recordingInfo } from "../extension/lib/media.js";
 import { bindSubtitles } from "../extension/lib/subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
-import { createApi, createPlayerStub, snapshot, popupSender, pageSender } from "./fixtures.mjs";
+import { createApi, createPlayerStub, snapshot, popupSender, pageSender, mediaUrl } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/popup.html", import.meta.url), "utf8");
 const code = (await readFile(new URL("../extension/popup.js", import.meta.url), "utf8")).replace(/^import .+;\r?$/gm, "");
@@ -42,6 +42,7 @@ test("popup scans the existing page, previews on demand and copies complete sign
     await until(() => document.querySelectorAll(".media-card").length === 2);
     assert.equal(document.querySelector("#course-name").value, "数据库系统");
     const card = document.querySelector(".media-card");
+    card.querySelector(".file-tools").click();
     assert.equal(card.querySelector("video").getAttribute("src"), null, "no network request is made for an unopened preview");
     card.querySelector(".preview-button").click();
     assert.equal(card.querySelector(".preview").hidden, false);
@@ -67,7 +68,7 @@ test("editing names immediately before downloading uses the edited filenames and
     const saveAs = document.querySelector("#save-as");
     saveAs.checked = true;
     saveAs.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-    document.querySelector("#download-all").click();
+    document.querySelector("#download-selected").click();
     await until(() => downloadCalls.length === 2);
     assert.match(downloadCalls[0].filename, /数据库 第1讲/);
     assert.match(downloadCalls[0].filename, /课件\.mp4$/);
@@ -138,15 +139,45 @@ test("a single-camera preview can load a local subtitle into the popup document"
   } finally { dom.window.close(); }
 });
 
-test("watching is the primary action and local downloads remain available for a single recording", async () => {
+test("synchronized viewing stays accessible and a single recording can be downloaded", async () => {
   const { document, dom } = await mount({ snapshot: { ...snapshot, media: snapshot.media.slice(0, 1) } });
   try {
     await until(() => document.querySelector(".media-card") && !document.querySelector("#scan").disabled);
     const watch = document.querySelector("#open-player");
     assert.equal(watch.closest(".course-section") !== null, true);
     assert.equal(watch.disabled, true);
-    assert.equal(document.querySelector("#download-all").disabled, false);
+    assert.equal(document.querySelector("#download-selected").disabled, false);
     assert.equal(document.querySelector(".download-button").disabled, false);
     assert.doesNotMatch(document.body.textContent, /云盘/);
   } finally { dom.window.close(); }
+});
+
+test("the checklist totals known and unknown sizes, keeps the user's subset and downloads only checked files", async (t) => {
+  const { dom, document, controller, downloadCalls } = await mount();
+  t.after(() => dom.window.close());
+  const checks = () => [...document.querySelectorAll(".file-check")];
+  const total = document.getElementById("selection-total");
+  const all = document.getElementById("select-all");
+  const download = document.getElementById("download-selected");
+  const record = (camera, bytes) => controller.recordResponse({
+    tabId: 1, frameId: 0, documentId: "doc-a", url: mediaUrl(camera), statusCode: 206,
+    responseHeaders: [{ name: "Content-Type", value: "video/mp4" }, { name: "Content-Range", value: "bytes 0-31/" + bytes }]
+  });
+  await until(() => checks().length === 2 && !download.disabled);
+  assert.equal(all.checked, true);
+  assert.match(total.textContent, /2 个文件.*大小待获取/);
+  await record("CloudIPC-demo-b", 1024 * 1024);
+  await until(() => total.textContent.includes("至少 1.0 MB"));
+  all.click();
+  assert.equal(download.disabled, true);
+  assert.match(total.textContent, /0 个文件.*0 B/);
+  checks()[1].click();
+  assert.equal(all.indeterminate, true);
+  assert.equal(total.textContent, "已选 1 个文件 · 1.0 MB");
+  await record("CloudIPC-demo-c", 4096);
+  await until(() => checks().length === 3);
+  assert.deepEqual(checks().map(input => input.checked), [false, true, false]);
+  download.click();
+  await until(() => downloadCalls.length > 0 && !document.getElementById("scan").disabled);
+  assert.deepEqual(downloadCalls.map(job => job.url), [mediaUrl("CloudIPC-demo-b")]);
 });

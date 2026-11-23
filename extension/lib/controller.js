@@ -27,7 +27,7 @@ export function createController(api) {
     await api.storage.session.set({ [storageKey(state.tabId)]: state });
     try {
       await api.action.setBadgeText({ tabId: state.tabId, text: state.media.length ? String(state.media.length) : "" });
-      await api.action.setBadgeBackgroundColor({ tabId: state.tabId, color: "#795219" });
+      await api.action.setBadgeBackgroundColor({ tabId: state.tabId, color: "#3669ae" });
     } catch { /* A tab may close between the state update and the badge update. */ }
   }
 
@@ -128,6 +128,7 @@ export function createController(api) {
       const state = await read(tabId);
       const items = sortedMedia(state);
       const selected = items.filter((item) => keys === null || keys.includes(item.key));
+      if (keys && selected.length !== new Set(keys).size) throw new Error("所选画面已更新，请重新确认下载清单。");
       if (!selected.length) throw new Error("还没有识别到视频，请先播放回放再重新识别。" );
       for (const item of selected) {
         try {
@@ -209,7 +210,7 @@ export function createController(api) {
     if (!result || result.stale) throw new Error("请打开对应课次的原回放页，重新识别后读取课程字幕，或导入本地字幕。");
     if (result.text || result.cues?.length) return { ok: true, ...result };
     if (result.failed) throw new Error("读取课程字幕失败，请确认原回放页已登录后重试，或导入本地字幕。");
-    throw new Error("本次回放没有可用的课程字幕，可以导入 SRT 或 VTT 文件。");
+    throw new Error("这个画面没有可用的课程字幕，可以导入 SRT 或 VTT 文件。");
   }
 
   async function dispatch(message, sender = {}) {
@@ -233,6 +234,9 @@ export function createController(api) {
         await api.storage.local.set({ saveAs: !!message.saveAs });
         return { ok: true };
       case "DOWNLOAD_MEDIA": return download(tabId, [message.key]);
+      case "DOWNLOAD_SELECTED":
+        if (!Array.isArray(message.keys) || !message.keys.length || !message.keys.every(key => typeof key === "string")) throw new Error("请先勾选要下载的画面。");
+        return download(tabId, message.keys);
       case "DOWNLOAD_ALL": return download(tabId, null);
       case "CONTROL_DOWNLOAD": return edit(tabId, async (state) => {
         const media = state.media.find((item) => item.key === message.key);
