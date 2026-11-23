@@ -179,9 +179,11 @@ function render(next) {
   $("unsupported").hidden = next.supported;
   if (!next.supported) return;
   if (!titleDirty && document.activeElement !== $("course-name")) $("course-name").value = next.courseTitle;
+  $("course-name").title = next.courseTitle;
   $("save-as").checked = !!next.options.saveAs;
-  $("summary").textContent = next.media.length === 1 ? "已识别 1 路，可预览或下载。同步看课需要两路画面。" :
+  const summary = next.media.length === 1 ? "已识别 1 路，同步看课需 2 路" :
     next.media.length ? `已识别 ${next.media.length} 路画面` : "等待回放视频加载";
+  if ($("summary").textContent !== summary) $("summary").textContent = summary;
   $("empty").hidden = next.media.length > 0;
   $("open-player").disabled = busy || next.media.length < 2;
   const keys = new Set(next.media.map((media) => media.key));
@@ -198,7 +200,8 @@ function render(next) {
     if (document.activeElement !== name) name.value = media.label;
     const info = recordingInfo(media.url);
     const facts = card.querySelector(".media-facts");
-    facts.textContent = ["MP4", formatDuration(media.duration), media.width && media.height ? `${media.width} × ${media.height}` : ""].filter(Boolean).join(" · ");
+    const resolution = media.width && media.height ? `${media.width}\u00a0×\u00a0${media.height}` : "";
+    facts.textContent = ["MP4", formatDuration(media.duration), resolution].filter(Boolean).join(" ·\u00a0");
     facts.title = [info.date, media.camera || info.camera].filter(Boolean).join(" · ");
     card.querySelector(".file-size").textContent = formatBytes(fileSize(media));
     updateProgress(card, media);
@@ -214,13 +217,18 @@ $("save-as").addEventListener("change", () => {
   savingOptions = send("SET_OPTIONS", { saveAs: $("save-as").checked });
   savingOptions.catch((error) => notice(error.message, true));
 });
-$("scan").addEventListener("click", () => { void act(async () => {
-  await persistTitle();
-  notice("正在检查当前回放页面…" );
-  const result = await send("SCAN_TAB");
-  notice(result.notice || (result.media.length ? "已更新画面。预览后可以修改画面名称。" : "请在回放页点击播放，再重新识别。"));
-  return result;
-}); });
+async function scanPage() {
+  notice();
+  $("scan-label").textContent = "识别中…";
+  try {
+    const result = await send("SCAN_TAB");
+    if (result.notice) notice(result.notice);
+    return result;
+  } finally {
+    $("scan-label").textContent = "重新识别";
+  }
+}
+$("scan").addEventListener("click", () => { void act(async () => { await persistTitle(); return scanPage(); }); });
 $("select-all").addEventListener("change", () => {
   includeNewFiles = $("select-all").checked;
   for (const card of cards.values()) card.querySelector(".file-check").checked = includeNewFiles;
@@ -247,11 +255,7 @@ async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab?.id;
   render(await send("GET_STATE"));
-  if (state.supported) await act(async () => {
-    const result = await send("SCAN_TAB");
-    if (result.notice) notice(result.notice);
-    return result;
-  });
+  if (state.supported) await act(scanPage);
   poll = setInterval(async () => {
     if (busy || pollInFlight) return;
     pollInFlight = true;

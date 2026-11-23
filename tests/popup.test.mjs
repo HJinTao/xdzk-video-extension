@@ -78,6 +78,33 @@ test("editing names immediately before downloading uses the edited filenames and
   } finally { dom.window.close(); }
 });
 
+test("rescans show progress in the button and display a banner only when there is a notice", async (t) => {
+  const { dom, document, api } = await mount();
+  t.after(() => dom.window.close());
+  const scan = document.querySelector("#scan");
+  const label = document.querySelector("#scan-label");
+  const notice = document.querySelector("#notice");
+  await until(() => document.querySelectorAll(".media-card").length === 2 && !scan.disabled);
+
+  let finish;
+  api.scripting.executeScript = () => new Promise(resolve => { finish = resolve; });
+  scan.click();
+  await until(() => !!finish);
+  assert.equal(label.textContent, "识别中…");
+  assert.equal(notice.hidden, true);
+  finish([]);
+  await until(() => !scan.disabled);
+  assert.equal(label.textContent, "重新识别");
+  assert.equal(notice.hidden, true);
+  assert.equal(document.querySelector("#summary").textContent, "已识别 2 路画面");
+
+  api.scripting.executeScript = async () => { throw new Error("frame unavailable"); };
+  scan.click();
+  await until(() => !notice.hidden && !scan.disabled);
+  assert.match(notice.textContent, /重新识别/);
+  assert.equal(label.textContent, "重新识别");
+});
+
 test("native pause/resume and interrupted download hints are visible in the popup", async () => {
   const { document, dom, jobs } = await mount();
   try {

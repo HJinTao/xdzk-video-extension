@@ -7,7 +7,7 @@
 1. 打开 `chrome://extensions/`；Edge 打开 `edge://extensions/`。
 2. 开启“开发者模式”，点击“加载已解压的扩展程序”。
 3. 在本项目中选择 **`extension` 文件夹**，其中应直接包含 `manifest.json`。本地路径为 `D:\project\xdzk_video\extension`。
-4. 如果使用 ZIP，先解压 `xdzk-recorder-0.5.0.zip`，再选择解压后直接包含 `manifest.json` 的文件夹。
+4. 如果使用 ZIP，先解压 `xdzk-recorder-0.5.1.zip`，再选择解压后直接包含 `manifest.json` 的文件夹。
 5. 在浏览器工具栏的扩展菜单中，将“西电智课 · 录播下载”固定，方便访问。
 
 本版本需要 Chrome / Edge 114 或更新版本。扩展按开发者模式加载，尚未上架扩展商店。
