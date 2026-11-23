@@ -1,33 +1,28 @@
-# 西电智课 · 录播下载
+# 西电智课 · 录播助手
 
-适用于 Chrome / Microsoft Edge 的 Manifest V3 扩展，识别西电智课回放页中的 MP4 视频，可双路同步在线播放，也可交给浏览器保存。无需安装 Python、Node.js 或 FFmpeg 即可使用打包好的扩展。
+在西电智课回放页打开一节课，即可同步看教室和课件两路画面、选择声音、搜索字幕，或勾选需要的画面下载 MP4。电脑端支持 Chrome 和 Microsoft Edge 114 及以上版本。手机也可以独立看课。
 
-## 只用手机看课
+## 电脑版下载与安装
 
-**安卓手机或平板**　把 `dist/xdzk-android-0.6.0.apk` 传到自己的手机并安装“智课看课”。这是供个人侧载的开发签名安装包，适用于 Android 8.0 及以上，建议使用已更新的系统 WebView。
+| v0.6.0 发布文件 | 适用场景 |
+| --- | --- |
+| [电脑版 ZIP](https://github.com/Pais1ey/xdzk-video-extension/releases/download/v0.6.0/xdzk-recorder-0.6.0.zip) | Windows、macOS 上的个人 Chrome / Edge 用户，解压后加载 |
+| [签名版 CRX](https://github.com/Pais1ey/xdzk-video-extension/releases/download/v0.6.0/xdzk-recorder-0.6.0.crx) | 支持自行安装 CRX 的环境，例如 Linux 上的 Chrome，或由管理员部署的浏览器 |
+| [SHA-256 校验文件](https://github.com/Pais1ey/xdzk-video-extension/releases/download/v0.6.0/SHA256SUMS.txt) | 核对下载包是否完整 |
 
-1. 在手机 Chrome 或微软必应打开课程播放页，点“分享”，选择“智课看课”。也可以打开 App，把课程播放网址粘贴到首页。
-2. 首次使用时，在 App 里的学校页面正常登录。若打开的是课程目录，点对应课次的“观看回放”。校外需要手机能通过学校要求的网络访问录播。
-3. 回放画面加载后会进入播放器。若页面等待手动播放，先点原页面的视频，再点顶部“播放这节课”。双路共用进度条，可选教室或课件的声音。下次从首页“观看记录”找回课程和进度。
+**用 ZIP 安装或升级**
 
-App 自带播放器，手机直接连接西电。使用期间电脑可以一直关机。
+1. 将电脑版 ZIP 解压到准备长期保留的文件夹。若使用仓库源码，选择项目里的 `extension/` 文件夹。
+2. Chrome 打开 `chrome://extensions/`，Edge 打开 `edge://extensions/`。开启“开发者模式”，点击“加载已解压的扩展程序”，选择直接包含 `manifest.json` 的文件夹。
+3. 在浏览器工具栏中固定“西电智课 · 录播下载”。已经打开的课程回放页刷新一次即可使用。
+4. 升级已有的解压版时，把新版文件覆盖到原文件夹，在扩展管理页点“重新加载”。沿用同一浏览器配置和安装目录可以保留本地观看记录。
 
-**iPhone 和 iPad**　`dist/xdzk-ios-source-0.6.0.zip` 包含 iOS 16.4 及以上的应用源码、分享入口和播放器。用 Mac 上的 Xcode 设置签名并装到设备后，可以从 Chrome 或必应分享课程到“智课看课”，再打开 App 进入该节课。也可直接在 App 粘贴课程网址。[Apple 安装与分发指南](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)
+**用 CRX 安装**　在支持本地 CRX 的 Linux Chrome 中，将文件拖入 `chrome://extensions/` 并确认安装。Windows 和 macOS 上的 Chrome 对商店外签名包实行企业策略限制，个人使用请选择上表中的 ZIP。此 CRX 的扩展 ID 为 `lpjbgnedjnkbcogdjehbafeiglgdekdj`。[Chrome 官方分发说明](https://developer.chrome.com/docs/extensions/how-to/distribute) · [Edge 官方本地安装说明](https://learn.microsoft.com/en-us/microsoft-edge/extensions/getting-started/extension-sideloading)
 
-## 安装
+## 在电脑上看课和下载
 
-1. 打开 `chrome://extensions/`；Edge 打开 `edge://extensions/`。
-2. 开启“开发者模式”，点击“加载已解压的扩展程序”。
-3. 在本项目中选择 **`extension` 文件夹**，其中应直接包含 `manifest.json`。本地路径为 `D:\project\xdzk_video\extension`。
-4. 如果使用 ZIP，先解压 `xdzk-recorder-0.6.0.zip`，再选择解压后直接包含 `manifest.json` 的文件夹。已从本项目安装的用户可在扩展管理页点“重新加载”。
-5. 在浏览器工具栏的扩展菜单中，将“西电智课 · 录播下载”固定，方便访问。
-
-本版本需要 Chrome / Edge 114 或更新版本。扩展按开发者模式加载，尚未上架扩展商店。
-
-## 使用
-
-1. 在浏览器中正常登录西电智课，打开某一节课的回放。
-2. 点击扩展图标。已有 `<video>` 视频源会直接被识别；若面板为空，在页面点击播放，再点“重新识别”。双画面课程可以分别播放两路。
+1. 登录西电智课，打开某一节课的回放。校外按学校要求连接零信任。
+2. 点击扩展图标。面板为空时，在回放页点播放，再点扩展里的“重新识别”。识别到两路后，点“同步看课”进入播放器。
 3. 在文件清单中勾选需要的画面，查看已选数量和合计大小，点击“下载所选画面”。默认全选，大小尚未返回的文件会单独标明。
 4. 点画面右侧的“⋯”可预览、修改保存名称、复制链接或单独下载。课程名称也可在清单上方编辑。
 5. 默认保存到浏览器下载目录下的 `西电智课/课程名/日期_时间_序号_画面名.mp4`；勾选“每次选择保存位置”后由浏览器弹出保存窗口。
@@ -41,7 +36,19 @@ App 自带播放器，手机直接连接西电。使用期间电脑可以一直�
 
 手机网页的“观看记录”保存在当前浏览器、当前播放器网址下。普通窗口关闭再打开仍能查看；清理该站点数据或卸载扩展会清除对应的记录。电脑发到手机的播放链接可以带上当时的进度，此后各设备分别记录。
 
-## 手机和平板上的 Chrome 或微软必应
+## 只用手机或平板看课
+
+**安卓 App**　从源码构建后，将 `dist/xdzk-android-0.6.0.apk` 传到手机并安装“智课看课”。适用于 Android 8.0 及以上版本。
+
+1. 在手机 Chrome 或微软必应打开课程播放页，点“分享 → 智课看课”，或在 App 首页粘贴课程网址。
+2. 首次使用时在 App 内登录学校，进入具体课次的“观看回放”。校外按学校要求连接零信任。
+3. 画面加载后会进入播放器。如果原页面等待手动播放，先点视频，再点顶部的“播放这节课”。下次从“观看记录”继续。
+
+App 自带播放器，直接连接学校视频服务器，电脑可以关机。
+
+**iPhone 和 iPad**　iOS 16.4 及以上版本的应用源码位于 `native/ios/`。用 Mac 上的 Xcode 签名安装后，可从 Chrome 或必应分享课程，也可在 App 中粘贴课程网址。构建步骤见下文“开发和验证”。[Apple 安装与分发指南](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)
+
+### 手机浏览器网页版
 
 安卓手机、安卓平板、iPhone 和 iPad 使用同一个网页入口。手机直接播放学校的 MP4。先确认手机能正常访问学校回放，校外按校方要求登录零信任。手机 Chrome 商店里的“添加到桌面”会把扩展装到电脑上。[Chrome 官方帮助](https://support.google.com/chrome/answer/2664769?hl=zh-Hans)
 
@@ -115,6 +122,8 @@ npm.cmd run build
 构建 iOS 应用需要 macOS、Xcode 和 XcodeGen。在解压后的 iOS 源码包目录运行 `xcodegen generate` 并打开生成的 `XDZK.xcodeproj`。将项目的 `XDZK_APP_ID` 配置为自己的应用标识，在两个 target 的 Signing & Capabilities 中选同一个开发团队，并为两个 target 注册相同的 App Group（`group.应用标识`）。选择自己的设备运行 `XDZK`。从仓库内的 `native/ios` 生成项目还需 Node.js 20.11+，用来复制播放器资源。
 
 `extension/` 是可直接加载的完整扩展。播放器采用官方 npm 包 `artplayer@5.4.0` 的 `dist/artplayer.mjs`，随 MIT 许可证保存在 `extension/vendor/artplayer/`。安装插件后即可在本机加载框架。`npm.cmd run build` 在 `dist/` 生成电脑扩展、手机网页版和 iOS 源码包及各自的 SHA-256 文件。修改图标后可运行 `node scripts/icons.mjs` 重新生成 PNG。
+
+发布新版 CRX 时，解压本次生成的电脑版 ZIP，在 Chromium 浏览器的扩展管理页点击“打包扩展程序”，选择解压目录和首次发布时的私钥。后续版本沿用同一把私钥才能保持扩展 ID。私钥保存在发布者本机的仓库目录之外。[Chromium 扩展打包说明](https://developer.chrome.com/docs/extensions/how-to/distribute/host-on-linux)
 
 `npm.cmd run preview` 启动仅绑定 `127.0.0.1` 的界面演示，使用人工示例数据，不读取登录态或下载真实课程；演示页面不包含在扩展包内。
 

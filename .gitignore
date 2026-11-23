@@ -4,6 +4,7 @@ dist/
 test-artifacts/
 coverage/
 *.crx
+*.pem
 .env
 native/ios/Resources/
 native/ios/Generated/
