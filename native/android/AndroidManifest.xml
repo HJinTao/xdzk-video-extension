@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.pais1ey.xdzk">
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <application android:label="智课看课" android:icon="@drawable/launcher" android:allowBackup="false" android:networkSecurityConfig="@xml/network" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+    <activity android:name=".CourseActivity" android:exported="true" android:launchMode="singleTop" android:configChanges="orientation|screenSize|keyboardHidden">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+      <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+    </activity>
+  </application>
+</manifest>

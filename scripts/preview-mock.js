@@ -15,9 +15,15 @@
     })
   };
   window.chrome = {
+    storage: { local: {
+      async get(key) { return { [key]: sessionStorage.getItem(key) }; },
+      async set(values) { for (const [key, value] of Object.entries(values)) sessionStorage.setItem(key, value); }
+    } },
     tabs: { async query() { return [{ id: 1 }]; }, async create() {} },
     runtime: {
       async sendMessage(message) {
+        if (message.type === "GET_HISTORY" || message.type === "REMOVE_HISTORY") return { ok: true, entries: [] };
+        if (message.type === "WATCH_PROGRESS") return { ok: true };
         if (message.type === "GET_SUBTITLES") return { ok: true, text: "WEBVTT\n\n00:00.000 --> 00:02.000\n一朵花正在风中摇曳。\n\n00:02.000 --> 00:05.000\n镜头对准了花瓣。" };
         if (message.type === "OPEN_PLAYER") { window.open("/player.html?id=demo", "_blank"); return { ok: true }; }
         if (message.type === "SET_OPTIONS") state.options.saveAs = message.saveAs;

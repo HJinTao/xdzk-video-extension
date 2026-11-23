@@ -2,12 +2,24 @@
 
 适用于 Chrome / Microsoft Edge 的 Manifest V3 扩展，识别西电智课回放页中的 MP4 视频，可双路同步在线播放，也可交给浏览器保存。无需安装 Python、Node.js 或 FFmpeg 即可使用打包好的扩展。
 
+## 只用手机看课
+
+**安卓手机或平板**　把 `dist/xdzk-android-0.6.0.apk` 传到自己的手机并安装“智课看课”。这是供个人侧载的开发签名安装包，适用于 Android 8.0 及以上，建议使用已更新的系统 WebView。
+
+1. 在手机 Chrome 或微软必应打开课程播放页，点“分享”，选择“智课看课”。也可以打开 App，把课程播放网址粘贴到首页。
+2. 首次使用时，在 App 里的学校页面正常登录。若打开的是课程目录，点对应课次的“观看回放”。校外需要手机能通过学校要求的网络访问录播。
+3. 回放画面加载后会进入播放器。若页面等待手动播放，先点原页面的视频，再点顶部“播放这节课”。双路共用进度条，可选教室或课件的声音。下次从首页“观看记录”找回课程和进度。
+
+App 自带播放器，手机直接连接西电。使用期间电脑可以一直关机。
+
+**iPhone 和 iPad**　`dist/xdzk-ios-source-0.6.0.zip` 包含 iOS 16.4 及以上的应用源码、分享入口和播放器。用 Mac 上的 Xcode 设置签名并装到设备后，可以从 Chrome 或必应分享课程到“智课看课”，再打开 App 进入该节课。也可直接在 App 粘贴课程网址。[Apple 安装与分发指南](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)
+
 ## 安装
 
 1. 打开 `chrome://extensions/`；Edge 打开 `edge://extensions/`。
 2. 开启“开发者模式”，点击“加载已解压的扩展程序”。
 3. 在本项目中选择 **`extension` 文件夹**，其中应直接包含 `manifest.json`。本地路径为 `D:\project\xdzk_video\extension`。
-4. 如果使用 ZIP，先解压 `xdzk-recorder-0.5.1.zip`，再选择解压后直接包含 `manifest.json` 的文件夹。
+4. 如果使用 ZIP，先解压 `xdzk-recorder-0.6.0.zip`，再选择解压后直接包含 `manifest.json` 的文件夹。已从本项目安装的用户可在扩展管理页点“重新加载”。
 5. 在浏览器工具栏的扩展菜单中，将“西电智课 · 录播下载”固定，方便访问。
 
 本版本需要 Chrome / Edge 114 或更新版本。扩展按开发者模式加载，尚未上架扩展商店。
@@ -22,6 +34,25 @@
 6. 关闭扩展面板后，浏览器下载任务仍会继续。可在面板暂停、继续，或点击“查看下载”进入浏览器下载列表。
 
 录播日期和时间来自视频路径或文件名，使用北京时间。相同名称的两个机位仍保留独立编号，避免覆盖。
+
+## 观看记录与续播
+
+在学校回放页、扩展单路预览或双路播放器里开始播放后，会自动保存课程和进度。点击扩展右上角的“观看记录”即可查看最近 50 节，支持逐条移除。从记录点“继续观看”会重新打开学校回放。重新打开同一课次的同步播放器或预览也会恢复进度。播到结尾的录播下次从头开始。
+
+手机网页的“观看记录”保存在当前浏览器、当前播放器网址下。普通窗口关闭再打开仍能查看；清理该站点数据或卸载扩展会清除对应的记录。电脑发到手机的播放链接可以带上当时的进度，此后各设备分别记录。
+
+## 手机和平板上的 Chrome 或微软必应
+
+安卓手机、安卓平板、iPhone 和 iPad 使用同一个网页入口。手机直接播放学校的 MP4。先确认手机能正常访问学校回放，校外按校方要求登录零信任。手机 Chrome 商店里的“添加到桌面”会把扩展装到电脑上。[Chrome 官方帮助](https://support.google.com/chrome/answer/2664769?hl=zh-Hans)
+
+**希望电脑关机时也能看**　解压 `xdzk-mobile-0.6.0.zip`，将里面 `extension/` 文件夹的内容一次性放在固定的 HTTPS 静态网站（例如 GitHub Pages），在手机收藏其中的 `mobile.html`。只需发布播放器文件。此后用手机打开这个网址，通过以下任一方式选择课程。[GitHub Pages 官方说明](https://docs.github.com/zh/pages/getting-started-with-github-pages/what-is-github-pages)
+
+- **直接用手机选课**　在手机版展开“直接从手机上的智课回放打开”，按提示创建“智课看课”书签。在同一个浏览器登录智课，进入具体课次，点播放后运行书签。也可在手机版首页粘贴一至两条有效的学校 MP4 地址。
+- **从电脑接着看**　在电脑的扩展面板勾选一至两路画面，展开“手机观看”，首次填入上述手机版网址。点“复制本课手机链接”，在自己的手机浏览器打开整条链接。单路直接打开播放器，双路自动共用进度条，可切换声音。遇到限制脚本书签的必应内置浏览页，也可以用这种普通链接。
+
+**在同一 Wi-Fi 先试用**　也可以在装有 Node.js 20.11 或更高版本的 Windows 电脑上，解压手机版压缩包后双击 `start-mobile.cmd`。项目目录里也可以运行 `npm.cmd run mobile`。用手机打开窗口显示的 `http://局域网地址:8860/mobile.html`，或把它填进扩展的“手机观看”。这种方式在手机打开、刷新或切换播放器页面时需要电脑保持开机、启动窗口保持运行。手机与电脑应能在该网络内互访。
+
+手机支持双路同步、声音选择、倍速、单画面播放及本地 SRT/VTT 字幕。想保存原片，可在手机版首页打开对应原片，使用浏览器提供的视频菜单。出现加载失败时先在手机上试播学校原回放，再获取本课的新链接。生成的链接包含学校临时签名，仅用于自己的设备；长期观看记录只保存播放位置、视频路径、课程名称、录制时间和学校回放入口。
 
 ## 双路同步在线播放
 
@@ -79,7 +110,11 @@ npm.cmd test
 npm.cmd run build
 ```
 
-`extension/` 是可直接加载的完整扩展。播放器采用官方 npm 包 `artplayer@5.4.0` 的 `dist/artplayer.mjs`，随 MIT 许可证保存在 `extension/vendor/artplayer/`。安装插件后即可在本机加载框架。`npm.cmd run build` 生成 ZIP 和 SHA-256 文件到 `dist/`。修改图标后可运行 `node scripts/icons.mjs` 重新生成 PNG。
+构建安卓安装包需要 JDK 17 或更高版本、Android SDK Platform 35 和 Build Tools 35.0.0。设置 `JAVA_HOME` 和 `ANDROID_HOME` 后运行 `npm run android`。构建脚本使用本机标准开发密钥签名，并验证成品 APK。
+
+构建 iOS 应用需要 macOS、Xcode 和 XcodeGen。在解压后的 iOS 源码包目录运行 `xcodegen generate` 并打开生成的 `XDZK.xcodeproj`。将项目的 `XDZK_APP_ID` 配置为自己的应用标识，在两个 target 的 Signing & Capabilities 中选同一个开发团队，并为两个 target 注册相同的 App Group（`group.应用标识`）。选择自己的设备运行 `XDZK`。从仓库内的 `native/ios` 生成项目还需 Node.js 20.11+，用来复制播放器资源。
+
+`extension/` 是可直接加载的完整扩展。播放器采用官方 npm 包 `artplayer@5.4.0` 的 `dist/artplayer.mjs`，随 MIT 许可证保存在 `extension/vendor/artplayer/`。安装插件后即可在本机加载框架。`npm.cmd run build` 在 `dist/` 生成电脑扩展、手机网页版和 iOS 源码包及各自的 SHA-256 文件。修改图标后可运行 `node scripts/icons.mjs` 重新生成 PNG。
 
 `npm.cmd run preview` 启动仅绑定 `127.0.0.1` 的界面演示，使用人工示例数据，不读取登录态或下载真实课程；演示页面不包含在扩展包内。
 

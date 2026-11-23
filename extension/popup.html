@@ -6,6 +6,7 @@
   <title>西电智课录播下载</title>
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="history.css">
   <link rel="stylesheet" href="subtitles.css">
   <link rel="stylesheet" href="playback.css">
   <script type="module" src="popup.js"></script>
@@ -15,9 +16,14 @@
     <header class="header">
       <img src="icons/icon32.png" width="32" height="32" alt="">
       <h1>西电智课 · 录播助手</h1>
+      <button id="show-history" type="button" class="text-button history-open" aria-controls="history-panel" aria-expanded="false">观看记录</button>
     </header>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <section id="history-panel" class="history-panel" hidden>
+      <h2>观看记录</h2>
+      <ul id="watch-list" class="watch-list"></ul>
+    </section>
 
     <section id="unsupported" class="empty unsupported" hidden>
       <span class="empty-symbol" aria-hidden="true">↗</span>
@@ -47,6 +53,14 @@
       </section>
 
       <div id="media-list" class="media-list" role="list" aria-labelledby="files-heading"></div>
+      <details id="phone-share" class="phone-share">
+        <summary>手机观看</summary>
+        <label for="phone-base">手机版网址</label>
+        <input type="url" id="phone-base" autocomplete="off" placeholder="粘贴启动手机版后显示的网址">
+        <p>勾选一至两路画面，把生成的临时链接发给自己的手机。</p>
+        <button id="copy-phone" type="button" class="button">复制本课手机链接</button>
+        <textarea id="phone-result" readonly aria-label="手机播放链接" hidden></textarea>
+      </details>
 
       <footer class="footer">
         <div class="selection-summary">

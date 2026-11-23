@@ -2,6 +2,8 @@ import { formatBytes, formatDuration, recordingInfo } from "./lib/media.js";
 import { bindSubtitles } from "./lib/subtitles.js";
 import { createLecturePlayer } from "./lib/lecture-player.js";
 import { bindPlaybackSpeed } from "./lib/playback-speed.js";
+import { trackWatching, renderWatchList, replayAddress } from "./lib/watch-history.js";
+import { mobileAddress, phoneLink } from "./lib/phone-lesson.js";
 
 const $ = (id) => document.getElementById(id);
 const cards = new Map();
@@ -15,6 +17,7 @@ let savingTitle;
 let savingOptions;
 let includeNewFiles = true;
 let nextCardId = 0;
+let showingHistory = false;
 
 async function send(type, fields = {}) {
   const result = await chrome.runtime.sendMessage({ type, tabId, ...fields });
@@ -50,6 +53,7 @@ function updateSelection() {
   const summary = `已选 ${selected.length} 个文件 · ${size}`;
   if ($("selection-total").textContent !== summary) $("selection-total").textContent = summary;
   $("download-selected").disabled = busy || !selected.length;
+  $("copy-phone").disabled = busy || !selected.length || selected.length > 2;
 }
 
 async function act(operation) {
@@ -126,6 +130,12 @@ function makeCard(key) {
     if (details.hidden && !card.querySelector(".preview").hidden) card.querySelector(".preview-button").click();
   });
   const video = card.querySelector("video");
+  card.watch = trackWatching(video, at => {
+    void send("WATCH_PROGRESS", { at, samples: [{ key, time: video.currentTime, duration: video.duration }] }).catch(() => {});
+  });
+  video.addEventListener("loadedmetadata", () => {
+    if (card.resumeAt > 0) { video.currentTime = Math.min(card.resumeAt, video.duration); card.resumeAt = null; }
+  });
   card.subtitles = bindSubtitles(card.querySelector(".subtitles"), video, (key) => send("GET_SUBTITLES", { key }));
   card.subtitles.setSource(key);
   const speed = bindPlaybackSpeed(card.querySelector(".speed-control"), (value) => { video.defaultPlaybackRate = value; video.playbackRate = value; });
@@ -141,9 +151,12 @@ function makeCard(key) {
     card.querySelector(".preview-button").setAttribute("aria-expanded", String(!panel.hidden));
     card.querySelector(".preview-button").textContent = panel.hidden ? "预览画面" : "收起预览";
     if (panel.hidden) {
+      card.watch.reset();
+      card.resumeAt = null;
       video.pause();
       card.player.reset();
     } else {
+      card.resumeAt = card.media.resumeAt;
       card.querySelector(".preview-error").hidden = true;
       if (card.player) card.player.url = card.media.url;
       else card.player = createLecturePlayer(video, card.media.url);
@@ -175,8 +188,8 @@ function makeCard(key) {
 
 function render(next) {
   state = next;
-  $("workspace").hidden = !next.supported;
-  $("unsupported").hidden = next.supported;
+  $("workspace").hidden = showingHistory || !next.supported;
+  $("unsupported").hidden = showingHistory || next.supported;
   if (!next.supported) return;
   if (!titleDirty && document.activeElement !== $("course-name")) $("course-name").value = next.courseTitle;
   $("course-name").title = next.courseTitle;
@@ -187,7 +200,7 @@ function render(next) {
   $("empty").hidden = next.media.length > 0;
   $("open-player").disabled = busy || next.media.length < 2;
   const keys = new Set(next.media.map((media) => media.key));
-  for (const [key, card] of cards) if (!keys.has(key)) { card.subtitles.setSource(""); card.player?.destroy(); card.remove(); cards.delete(key); }
+  for (const [key, card] of cards) if (!keys.has(key)) { card.watch.reset(); card.subtitles.setSource(""); card.player?.destroy(); card.remove(); cards.delete(key); }
   if (!cards.size) includeNewFiles = true;
   next.media.forEach((media, index) => {
     let card = cards.get(media.key);
@@ -244,6 +257,46 @@ $("download-selected").addEventListener("click", () => { void act(async () => {
   return result;
 }); });
 $("open-downloads").addEventListener("click", () => { void chrome.tabs.create({ url: "chrome://downloads/" }); });
+async function showRecords(removeId) {
+  try {
+    const result = removeId ? await send("REMOVE_HISTORY", { key: removeId }) : await send("GET_HISTORY");
+    renderWatchList($("watch-list"), result.entries, showRecords, entry => {
+      const replay = replayAddress(entry.replay);
+      if (!replay) return null;
+      const link = document.createElement("a");
+      link.href = replay + "#xdzk-resume"; link.target = "_blank"; link.rel = "noopener noreferrer";
+      link.textContent = "继续观看"; return link;
+    });
+  } catch (error) { notice(error.message, true); }
+}
+$("show-history").addEventListener("click", () => {
+  showingHistory = !showingHistory;
+  if (showingHistory) for (const card of cards.values()) {
+    if (!card.querySelector(".preview").hidden) card.querySelector(".preview-button").click();
+  }
+  $("show-history").textContent = showingHistory ? "返回" : "观看记录";
+  $("show-history").setAttribute("aria-expanded", String(showingHistory));
+  $("history-panel").hidden = !showingHistory;
+  notice();
+  if (state) render(state);
+  if (showingHistory) void showRecords();
+});
+$("phone-share").addEventListener("toggle", async () => {
+  if (!$("phone-share").open) { $("phone-result").hidden = true; $("phone-result").value = ""; return; }
+  if (!$("phone-base").value) {
+    const stored = await chrome.storage.local.get("mobileBase").catch(() => ({}));
+    if (!$("phone-base").value) $("phone-base").value = stored.mobileBase || "";
+  }
+});
+$("copy-phone").addEventListener("click", async () => {
+  try {
+    const base = mobileAddress($("phone-base").value).href;
+    const url = phoneLink(base, { courseTitle: $("course-name").value, replay: state.replay, media: selectedFiles() });
+    await chrome.storage.local.set({ mobileBase: base });
+    try { await navigator.clipboard.writeText(url); notice("已复制，在手机 Chrome 或必应中打开即可。"); }
+    catch { $("phone-result").value = url; $("phone-result").hidden = false; $("phone-result").select(); notice("请复制下方的播放链接。"); }
+  } catch (error) { notice(error.message, true); }
+});
 $("open-player").addEventListener("click", () => { void act(async () => {
   await persistTitle();
   await Promise.all([...cards.values()].map((card) => card.pendingName));
@@ -264,5 +317,6 @@ async function init() {
   }, 1200);
 }
 
-window.addEventListener("pagehide", () => { clearInterval(poll); for (const card of cards.values()) card.player?.destroy(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) for (const card of cards.values()) card.watch.flush(); });
+window.addEventListener("pagehide", () => { clearInterval(poll); for (const card of cards.values()) { card.watch.reset(); card.player?.destroy(); } });
 init().catch((error) => notice(error.message, true));

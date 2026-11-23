@@ -1,0 +1,8 @@
+.history-panel { padding: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
+.history-panel h2 { margin: 0 0 6px; font-size: 16px; }
+.watch-list { list-style: none; padding: 0; margin: 0; color: var(--muted); font-size: 13px; }
+.watch-list li { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); }
+.watch-list li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.watch-list strong, .watch-list small { display: block; }
+.watch-list strong { color: var(--ink); }
+.watch-list a, .watch-list button { flex: none; color: var(--accent); }

@@ -36,7 +36,7 @@ export function createApi({ url = pageUrl } = {}) {
       return structuredClone({ ...keys, ...data });
     },
     async set(values) { await new Promise((done) => setTimeout(done, 1)); Object.assign(data, structuredClone(values)); },
-    async remove(key) { delete data[key]; }
+    async remove(keys) { for (const key of [].concat(keys)) delete data[key]; }
   });
   const api = {
     runtime: { id: "test-extension", getURL: (path) => `chrome-extension://test-extension/${path}` },

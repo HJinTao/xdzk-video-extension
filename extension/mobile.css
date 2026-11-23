@@ -1,0 +1,16 @@
+main { width: min(100%, 640px); margin: 0 auto; padding: 18px clamp(12px, 3vw, 24px) 32px; }
+header { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
+h1 { margin: 0; font-size: 20px; } h2 { margin: 0 0 8px; font-size: 18px; }
+.panel, .history-panel { padding: 16px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+p { margin: 6px 0 12px; font-size: 14px; line-height: 1.6; color: var(--muted); }
+form { display: grid; gap: 6px; } label { font-size: 14px; }
+input, textarea, button { font: inherit; min-width: 0; }
+textarea, form input { width: 100%; padding: 9px; border: 1px solid var(--strong-line); border-radius: 6px; }
+button, .watch-list a { min-height: 44px; padding: 7px 11px; color: var(--accent); border: 1px solid var(--line); border-radius: 7px; background: var(--paper); }
+.primary { margin-top: 6px; background: var(--action); color: white; font-weight: 600; }
+details { margin-top: 12px; } summary { padding: 10px 0; color: var(--accent); } details button { margin-top: 4px; }
+.watch-list a { display: inline-flex; align-items: center; text-decoration: none; }
+#status { padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--tint); color: var(--ink); overflow-wrap: anywhere; }
+.lecture-player { margin-bottom: 10px; } .lecture-player video { width: 100%; height: 100%; }
+.camera-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.camera-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--accent); overflow-wrap: anywhere; }

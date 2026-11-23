@@ -5,3 +5,6 @@ test-artifacts/
 coverage/
 *.crx
 .env
+native/ios/Resources/
+native/ios/Generated/
+native/ios/*.xcodeproj/
