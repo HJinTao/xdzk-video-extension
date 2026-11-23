@@ -8,21 +8,19 @@ import { bindSubtitles } from "../extension/lib/subtitles.js";
 import { bindPairedSubtitles } from "../extension/lib/paired-subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
 import { bindTranscript } from "../extension/lib/transcript.js";
-import { trackWatching } from "../extension/lib/watch-history.js";
-import { webPlayback } from "../extension/lib/web-playback.js";
 import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/player.html", import.meta.url), "utf8");
 const code = (await readFile(new URL("../extension/player.js", import.meta.url), "utf8")).replace(/^import .+;\r?$/gm, "");
 const flush = () => new Promise((done) => setTimeout(done, 15));
-async function page({ labels = ["画面 1", "画面 2"], restored = [], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), prepareMedia } = {}) {
+async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), prepareMedia } = {}) {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, trackWatching, webPlayback, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   const captionRequests = [];
   dom.window.chrome = { runtime: { async sendMessage(message) {
     if (message.type === "GET_SUBTITLES") { captionRequests.push(message.key); return captionResult(message.key); }
-    return { ok: true, courseTitle: "数据库系统", media: snapshot.media.map((item, index) => ({ ...item, ...restored[index], key: mediaKey(item.url), label: labels[index], url: mediaUrl(index ? "CloudIPC-demo-b" : "CloudIPC-demo-a", stamp) })) };
+    return { ok: true, courseTitle: "数据库系统", media: snapshot.media.map((item, index) => ({ ...item, key: mediaKey(item.url), label: labels[index], url: mediaUrl(index ? "CloudIPC-demo-b" : "CloudIPC-demo-a", stamp) })) };
   } } };
   dom.window.HTMLMediaElement.prototype.load = function() { this.currentTime = 0; queueMicrotask(() => this.dispatchEvent(new dom.window.Event("loadedmetadata"))); };
   dom.window.HTMLMediaElement.prototype.pause = () => {};
@@ -53,28 +51,6 @@ test("player page supports timeline, either-video seek and audio selection", asy
     const offset = document.querySelector("#offset"); offset.value = -3; change(offset);
     assert.deepEqual(videos.map((video) => video.currentTime), [70, 67]);
   } finally { close(dom); }
-});
-
-test("dual playback resumes the last camera watched after both metadata events", async t => {
-  let ready = false;
-  const { dom, videos } = await page({
-    restored: [{ resumeAt: 5, resumeStamp: 100 }, { resumeAt: 70, resumeStamp: 200 }],
-    prepareMedia(win) {
-      // readyState and duration on the unready camera must agree, just like a browser.
-      const media = win.document.querySelectorAll("video")[1];
-      const replacement = media.cloneNode();
-      media.replaceWith(replacement);
-      Object.defineProperty(replacement, "duration", { get: () => ready ? 120 : NaN });
-      Object.defineProperty(replacement, "readyState", { get: () => ready ? 1 : 0 });
-    }
-  });
-  t.after(() => close(dom));
-  assert.equal(videos[0].currentTime, 0);
-  ready = true;
-  const second = dom.window.document.querySelectorAll("video")[1];
-  second.dispatchEvent(new dom.window.Event("loadedmetadata"));
-  assert.equal(videos[0].currentTime, 70);
-  assert.equal(second.currentTime, 70);
 });
 
 test("refreshing signed sources preserves manual offset, playback speed and position", async () => {

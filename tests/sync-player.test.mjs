@@ -58,21 +58,6 @@ test("native play, pause and playback rate changes propagate to both videos", as
   } finally { engine.destroy(); }
 });
 
-test("simultaneous buffering keeps the play request until both cameras are ready", async t => {
-  const { videos, engine } = setup();
-  t.after(() => engine.destroy());
-  await engine.play();
-  for (const video of videos) video.emit("waiting");
-  await flush();
-  assert.equal(engine.wantPlaying, true);
-  assert.ok(videos.every(video => video.paused));
-  videos[0].emit("canplay");
-  assert.ok(videos.every(video => video.paused));
-  videos[1].emit("canplay");
-  await flush();
-  assert.ok(videos.every(video => !video.paused));
-});
-
 test("buffering pauses the pair without losing the intent to resume", async () => {
   const { videos, engine } = setup();
   try {

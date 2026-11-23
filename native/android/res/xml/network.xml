@@ -1,7 +1,0 @@
-<network-security-config>
-  <base-config cleartextTrafficPermitted="false"/>
-  <domain-config cleartextTrafficPermitted="true">
-    <domain>newes.chaoxing.com</domain>
-    <domain>kdlbptvideo.xidian.edu.cn</domain>
-  </domain-config>
-</network-security-config>

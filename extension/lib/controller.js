@@ -1,7 +1,6 @@
-import { downloadFilename, isCourseSubtitleUrl, isMediaUrl, isPlatformUrl, mediaKey, responseSize, sanitizeName } from "./media.js";
+import { downloadFilename, isCourseSubtitleUrl, isMediaUrl, isPlatformUrl, responseSize, sanitizeName } from "./media.js";
 import { applySnapshot, emptyState, sortedMedia, upsertMedia } from "./state.js";
 import { readCourseSubtitles } from "./course-subtitles.js";
-import { createWatchStore, resumeInfo, watchEntry, replayAddress } from "./watch-history.js";
 
 const storageKey = (tabId) => `tab:${tabId}`;
 const supportedUrl = (url) => isPlatformUrl(url) || isMediaUrl(url);
@@ -9,7 +8,6 @@ const supportedUrl = (url) => isPlatformUrl(url) || isMediaUrl(url);
 export function createController(api) {
   const queues = new Map();
   const closedTabs = new Set();
-  const history = createWatchStore(api.storage.local);
 
   function enqueue(tabId, task) {
     if (!Number.isInteger(tabId) || tabId < 0) return Promise.reject(new Error("找不到当前标签页。"));
@@ -62,16 +60,14 @@ export function createController(api) {
       return { ok: true, supported: false, media: [], courseTitle: "", options: await options() };
     }
     const state = await enqueue(tabId, () => read(tabId));
-    const records = await history.list();
     const media = await Promise.all(sortedMedia(state).map(async (item, index) => ({
       ...item,
-      ...resumeInfo(records, item.url),
       label: item.label || `画面 ${index + 1}`,
       filename: downloadFilename(state.titleOverride || state.courseTitle, item, index),
       download: await downloadItem(item)
     })));
     return {
-      ok: true, supported: true, tabId, pageTitle: tab.title || "", replay: replayAddress(tab.url), updatedAt: state.updatedAt,
+      ok: true, supported: true, tabId, pageTitle: tab.title || "", updatedAt: state.updatedAt,
       courseTitle: state.titleOverride || state.courseTitle || "课程录播", media, options: await options()
     };
   }
@@ -103,10 +99,6 @@ export function createController(api) {
       const state = await read(sender.tab.id);
       applySnapshot(state, payload, { frameId: sender.frameId ?? 0, documentId: sender.documentId, url: sender.url });
       await save(state);
-      if (sender.url.endsWith("#xdzk-resume") || sender.tab.url?.endsWith("#xdzk-resume")) {
-        const records = await history.list();
-        return { ok: true, resume: (payload.media || []).map(item => ({ url: item.url, time: resumeInfo(records, item.url).resumeAt })).filter(item => item.time > 0) };
-      }
       return { ok: true };
     });
   }
@@ -167,7 +159,7 @@ export function createController(api) {
     if (!current.supported || current.media.length < 2) throw new Error("至少需要两路视频，请先播放两路画面并重新识别。");
     const id = crypto.randomUUID();
     const key = `player:${id}`;
-    const payload = { sourceTabId: tabId, courseTitle: current.courseTitle, replay: current.replay, media: current.media, createdAt: Date.now() };
+    const payload = { sourceTabId: tabId, courseTitle: current.courseTitle, media: current.media, createdAt: Date.now() };
     await api.storage.session.set({ [key]: payload });
     try {
       const tab = await api.tabs.create({ url: `${api.runtime.getURL("player.html")}?id=${id}` });
@@ -192,27 +184,12 @@ export function createController(api) {
     let notice = "";
     if (refresh) {
       const latest = await view(payload.sourceTabId);
-      if (latest.supported && latest.media.length >= 2 && latest.media.some(item => payload.media.some(old => old.key === item.key))) {
+      if (latest.supported && latest.media.length >= 2) {
         payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
         await api.storage.session.set({ [`player:${id}`]: payload });
       } else notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
     }
-    const records = await history.list();
-    const media = payload.media.map(item => ({ ...item, ...resumeInfo(records, item.url) }));
-    return { ok: true, courseTitle: payload.courseTitle, media, notice };
-  }
-
-  async function recordWatch(message, sender) {
-    if (!Array.isArray(message.samples)) throw new Error("观看进度无效。");
-    const tabId = message.tabId ?? sender.tab?.id;
-    if (!message.id && closedTabs.has(tabId)) return { ok: true };
-    const source = message.id ? await readPlayer(message.id) : await enqueue(tabId, () => read(tabId));
-    const media = sender.tab && !sender.url.startsWith(api.runtime.getURL(""))
-      ? source.media.filter(item => item.frameId === (sender.frameId ?? 0) && (!item.documentId || item.documentId === sender.documentId))
-      : source.media;
-    const entry = watchEntry(source.titleOverride || source.courseTitle, media, source.replay || source.frames?.[0]?.url, message.samples, Math.min(Number(message.at) || Date.now(), Date.now()));
-    if (entry) await history.save(entry);
-    return { ok: true };
+    return { ok: true, courseTitle: payload.courseTitle, media: payload.media, notice };
   }
 
   async function subtitles(message) {
@@ -239,18 +216,11 @@ export function createController(api) {
   async function dispatch(message, sender = {}) {
     if (sender.id !== api.runtime.id) throw new Error("请求来源无效。" );
     if (message?.type === "PAGE_SNAPSHOT") return snapshot(message, sender);
-    if (message?.type === "PAGE_WATCH" && sender.tab && supportedUrl(sender.url)) {
-      const { url, time, duration } = message;
-      return recordWatch({ samples: [{ key: mediaKey(url), time, duration }], at: message.at }, sender);
-    }
     if (!sender.url?.startsWith(api.runtime.getURL(""))) throw new Error("请通过扩展面板操作。" );
     const tabId = message?.tabId;
     switch (message?.type) {
       case "OPEN_PLAYER": return openPlayer(tabId);
       case "GET_PLAYER": return playerData(message.id, !!message.refresh);
-      case "WATCH_PROGRESS": return recordWatch(message, sender);
-      case "GET_HISTORY": return { ok: true, entries: await history.list() };
-      case "REMOVE_HISTORY": await history.remove(message.key); return { ok: true, entries: await history.list() };
       case "GET_SUBTITLES": return subtitles(message);
       case "GET_STATE": return view(tabId);
       case "SCAN_TAB": return scan(tabId);

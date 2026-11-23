@@ -8,13 +8,6 @@ body::after { left: min(calc(var(--grid-step) * 4 + 16px), calc(100% - 24px)); }
 .header { gap: 8px; padding: 0 4px 8px; }
 .header img { width: 24px; height: 24px; }
 .header h1 { margin: 0; font-size: 15px; font-weight: 650; }
-.header { flex-wrap: wrap; }
-.history-open { margin-left: auto; }
-.phone-share { margin: 0 var(--inset); padding: 5px 0; color: var(--muted); font-size: 12px; }
-.phone-share summary { color: var(--accent); padding-block: 3px; }
-.phone-share label { display: block; margin: 6px 0 3px; }
-.phone-share :is(input, textarea) { width: 100%; padding: 7px; color: var(--ink); border: 1px solid var(--strong-line); border-radius: 6px; }
-.phone-share p { margin: 5px 0; }
 #workspace, .empty.unsupported { background: var(--paper); border: 1px solid var(--line); border-radius: 13px; box-shadow: 0 4px 15px #2449750a; }
 #workspace { overflow: clip; }
 .toolbar, .selection-summary, .footer-note, .progress-line { justify-content: space-between; }

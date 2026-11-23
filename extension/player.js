@@ -5,23 +5,12 @@ import { createLecturePlayer } from "./lib/lecture-player.js";
 import { bindPlaybackSpeed } from "./lib/playback-speed.js";
 import { bindTranscript } from "./lib/transcript.js";
 import { formatClock } from "./lib/media.js";
-import { trackWatching } from "./lib/watch-history.js";
-import { webPlayback } from "./lib/web-playback.js";
 
 const $ = (id) => document.getElementById(id);
 const videos = [$("video-0"), $("video-1")];
 const id = new URL(location.href).searchParams.get("id");
-const mobile = /^(https?|xdzk-app):$/.test(location.protocol) && new URL(location.href).searchParams.has("mobile") ? webPlayback(window) : null;
 let engine;
 let media = [];
-let playingPair = [];
-let pendingSeek = null;
-const watch = trackWatching(videos[0], at => {
-  if (playingPair.length !== 2) return;
-  const samples = playingPair.map((item, i) => ({ key: item.key, time: videos[i].currentTime, duration: videos[i].duration }));
-  const save = mobile ? mobile.progress(samples, at) : chrome.runtime.sendMessage({ type: "WATCH_PROGRESS", id, samples, at });
-  void save.catch(() => {});
-});
 let primary = 0;
 let reviewIndex = 0;
 let reviewClock = 0;
@@ -38,7 +27,6 @@ const transcript = bindTranscript($("review"), (seconds) => {
   if (engine?.range()) engine.seek(seconds - (reviewClock === 1 ? engine.offset : 0));
 });
 const subtitles = videos.map((video, index) => bindSubtitles($("subtitles-" + index), video, async (key) => {
-  if (mobile) throw new Error("手机版可在这里导入 SRT 或 VTT 字幕。");
   const result = await chrome.runtime.sendMessage({ type: "GET_SUBTITLES", id, key });
   if (!result?.ok) throw new Error(result?.error || "读取课程字幕失败，请重试。");
   return result;
@@ -99,12 +87,6 @@ function showReview(open) {
 
 function stateChanged(state) {
   const ready = !!state.range;
-  if (ready && engine && pendingSeek !== null && videos.every(v => v.readyState >= 1)) {
-    const target = pendingSeek;
-    pendingSeek = null;
-    engine.seek(target);
-    return;
-  }
   for (const name of ["play", "back", "forward", "timeline"]) $(name).disabled = !ready;
   $("play").textContent = state.playing ? "暂停" : "播放";
   const status = state.buffering ? "缓冲中，等待两路画面" : !ready ? "等待两路视频就绪或时间重叠" : state.playing ? "两路同步播放中" : "两路已同步";
@@ -126,8 +108,6 @@ function stateChanged(state) {
 }
 
 function loadPair({ preserve = false } = {}) {
-  watch.reset();
-  pendingSeek = null;
   const time = preserve ? engine?.time() || 0 : 0;
   const previousOffset = preserve ? engine?.offset : undefined;
   const rate = engine?.rate || savedRate;
@@ -135,7 +115,6 @@ function loadPair({ preserve = false } = {}) {
   engine = null;
   const pair = [$("source-0").value, $("source-1").value].map((key) => media.find((item) => item.key === key));
   const valid = pair.every(Boolean) && pair[0].key !== pair[1].key;
-  playingPair = valid ? pair : [];
   for (const name of ["swap-views", "toggle-review", "toggle-captions"]) $(name).disabled = !valid;
   pair.forEach((item, index) => {
     const name = item?.label || `画面 ${index + 1}`;
@@ -170,17 +149,18 @@ function loadPair({ preserve = false } = {}) {
   engine.setOffset(offset);
   engine.setAudio(savedAudio);
   engine.setRate(rate);
-  if (!mobile) subtitles.forEach(control => control.ensureCourse());
+  subtitles.forEach(control => control.ensureCourse());
   selectReview(openedReview ? reviewIndex : primary);
-  const fromSecond = Number.isFinite(pair[1].resumeAt) && (!Number.isFinite(pair[0].resumeAt) || pair[1].resumeStamp > pair[0].resumeStamp);
-  pendingSeek = preserve ? time : fromSecond ? pair[1].resumeAt - offset : pair[0].resumeAt ?? null;
-  engine.emit();
+  if (preserve) {
+    const generation = engine;
+    videos[0].addEventListener("loadedmetadata", () => { if (engine === generation) engine.seek(time); }, { once: true });
+  }
 }
 
 async function load({ refresh = false } = {}) {
   $("refresh").disabled = true;
   try {
-    const result = mobile ? { ok: true, ...await mobile.lesson() } : await chrome.runtime.sendMessage({ type: "GET_PLAYER", id, refresh });
+    const result = await chrome.runtime.sendMessage({ type: "GET_PLAYER", id, refresh });
     if (!result?.ok) throw new Error(result?.error || "无法读取课程，请从扩展面板重新打开同步播放。");
     if (result.media.length < 2) throw new Error("至少需要两路视频。请回到原回放页面，播放两路画面并重新识别。");
     const previous = [$("source-0").value, $("source-1").value];
@@ -210,7 +190,7 @@ $("timeline").addEventListener("blur", () => { if (editingTimeline) { editingTim
 $("offset").addEventListener("change", () => { if ($("offset").checkValidity()) engine?.setOffset(Number($("offset").value)); });
 document.querySelectorAll('input[name="audio"]').forEach((radio) => radio.addEventListener("change", () => { savedAudio = Number(radio.value); engine?.setAudio(savedAudio); }));
 for (let index = 0; index < 2; index++) $("source-" + index).addEventListener("change", () => loadPair());
-$("refresh").addEventListener("click", () => { if (mobile) location.assign("mobile.html"); else void load({ refresh: true }); });
+$("refresh").addEventListener("click", () => { void load({ refresh: true }); });
 $("swap-views").addEventListener("click", () => setPrimary(1 - primary));
 $("toggle-review").addEventListener("click", () => showReview($("review").hidden));
 $("toggle-captions").addEventListener("click", () => {
@@ -219,9 +199,7 @@ $("toggle-captions").addEventListener("click", () => {
 });
 $("close-review").addEventListener("click", () => showReview(false));
 $("review-source").addEventListener("change", () => selectReview(Number($("review-source").value)));
-window.addEventListener("pagehide", event => {
-  if (event.persisted) { watch.flush(); engine?.pause(); return; }
-  watch.reset();
+window.addEventListener("pagehide", () => {
   engine?.destroy();
   changingSources = true;
   subtitles.forEach((control) => control.setSource(""));
@@ -229,15 +207,4 @@ window.addEventListener("pagehide", event => {
   transcript.setTrack(null);
   players.forEach((player) => player.destroy());
 });
-document.addEventListener("visibilitychange", () => { if (document.hidden) watch.flush(); });
-if (mobile) {
-  $("mobile-home").hidden = false;
-  $("mobile-single").hidden = false;
-  $("mobile-single").addEventListener("click", () => {
-    const index = media.findIndex(item => item.key === playingPair[primary]?.key);
-    if (index >= 0) location.assign("mobile.html?single=" + index);
-  });
-  $("refresh").textContent = "重新导入录播";
-  $("offset-help").textContent = "正数表示画面 2 播放到更靠后的位置。若链接失效，请重新打开本课的新播放链接。";
-}
 void load();

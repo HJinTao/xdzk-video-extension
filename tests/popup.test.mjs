@@ -6,8 +6,6 @@ import { createController } from "../extension/lib/controller.js";
 import { formatBytes, formatDuration, recordingInfo } from "../extension/lib/media.js";
 import { bindSubtitles } from "../extension/lib/subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
-import { trackWatching, renderWatchList, replayAddress } from "../extension/lib/watch-history.js";
-import { mobileAddress, phoneLink, readPhoneLink } from "../extension/lib/phone-lesson.js";
 import { createApi, createPlayerStub, snapshot, popupSender, pageSender, mediaUrl } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/popup.html", import.meta.url), "utf8");
@@ -27,8 +25,7 @@ async function mount(options = {}) {
   const dom = new JSDOM(html, { url: popupSender.url, runScripts: "outside-only", pretendToBeVisual: true });
   fixture.api.runtime.sendMessage = (message) => controller.dispatch(message, popupSender);
   fixture.api.scripting.executeScript = async () => { await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot: options.snapshot ?? snapshot }, pageSender); return []; };
-  Object.assign(dom.window, { chrome: fixture.api, formatBytes, formatDuration, recordingInfo, bindSubtitles, bindPlaybackSpeed,
-    trackWatching, renderWatchList, replayAddress, mobileAddress, phoneLink, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { chrome: fixture.api, formatBytes, formatDuration, recordingInfo, bindSubtitles, bindPlaybackSpeed, createLecturePlayer: createPlayerStub });
   dom.window.HTMLMediaElement.prototype.play = () => Promise.resolve();
   dom.window.HTMLMediaElement.prototype.pause = () => {};
   dom.window.HTMLMediaElement.prototype.load = () => {};
@@ -146,31 +143,6 @@ test("the popup opens synchronized playback in a new tab without starting a down
     assert.match(createdTabs[0].url, /player\.html\?id=/);
     assert.equal(downloadCalls.length, 0);
   } finally { dom.window.close(); }
-});
-
-test("the popup shares checked cameras and finds a real preview in local history", async t => {
-  const { dom, document, clipboard, local } = await mount();
-  t.after(() => dom.window.close());
-  const get = id => document.getElementById(id);
-  await until(() => document.querySelectorAll(".file-check").length === 2 && !get("copy-phone").disabled);
-  document.querySelector(".file-check").click();
-  get("phone-base").value = "https://player.example/course/";
-  get("copy-phone").click();
-  await until(() => !!clipboard());
-  assert.equal(new URL(clipboard()).pathname, "/course/mobile.html");
-  assert.deepEqual(readPhoneLink(new URL(clipboard()).hash).media.map(i => i.url), [snapshot.media[1].url]);
-  const card = document.querySelector(".media-card");
-  card.querySelector(".preview-button").click();
-  const video = card.querySelector("video");
-  Object.defineProperty(video, "duration", { value: 120 });
-  video.currentTime = 22; video.dispatchEvent(new dom.window.Event("playing"));
-  await until(() => Object.keys(local).some(key => key.startsWith("watched:")));
-  get("show-history").click();
-  await until(() => get("watch-list").querySelector("a"));
-  assert.match(get("watch-list").textContent, /数据库系统.*0:22/);
-  assert.match(get("watch-list").querySelector("a").href, /#xdzk-resume$/);
-  get("watch-list").querySelector("button").click();
-  await until(() => get("watch-list").textContent.includes("还没有观看记录"));
 });
 
 test("a single-camera preview can load a local subtitle into the popup document", async () => {

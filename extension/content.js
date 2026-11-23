@@ -8,9 +8,6 @@
   let pageContext = location.href;
   let resourceCutoff = 0;
   const videoHost = "kdlbptvideo.xidian.edu.cn";
-  const watched = new Map();
-  const resumed = new WeakMap();
-  const videoUrl = video => video.currentSrc || video.src || video.querySelector("source[src]")?.src || "";
   const pageMedia = () => {
     const media = [];
     const add = (value, attributes = {}) => {
@@ -57,19 +54,7 @@
     if (!force && signature === lastPayload) return { ok: true };
     lastPayload = signature;
     try {
-      const response = await chrome.runtime.sendMessage({ type: "PAGE_SNAPSHOT", snapshot });
-      if (response?.resume?.length && location.href === snapshot.url) {
-        for (const video of document.querySelectorAll("video")) {
-          const url = videoUrl(video);
-          const position = response.resume.find(item => item.url === url)?.time;
-          const path = url && new URL(url, location.href).pathname;
-          if (position > 0 && video.readyState >= 1 && resumed.get(video) !== path) {
-            resumed.set(video, path);
-            video.currentTime = Math.min(position, video.duration || position);
-          }
-        }
-      }
-      return response;
+      return await chrome.runtime.sendMessage({ type: "PAGE_SNAPSHOT", snapshot });
     } catch {
       // A reload invalidates old content-script contexts; let the new instance take over.
       disconnected = true;
@@ -86,28 +71,6 @@
   observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src", "title", "aria-label"] });
   document.addEventListener("loadedmetadata", schedule, true);
   document.addEventListener("durationchange", schedule, true);
-  function progress(video, event) {
-    if (disconnected || !(video instanceof HTMLVideoElement)) return;
-    const url = videoUrl(video);
-    let playback = watched.get(video);
-    if (event === "playing" && playback?.url !== url) {
-      playback = { url, at: 0, time: -1 };
-      watched.set(video, playback);
-      void scan(false);
-    }
-    if (!playback || playback.url !== url || !url || !Number.isFinite(video.duration) || video.duration <= 0) return;
-    const at = Date.now();
-    if (playback.time === video.currentTime || (event === "timeupdate" && at - playback.at < 5000)) return;
-    playback.time = video.currentTime;
-    playback.at = at;
-    void chrome.runtime.sendMessage({ type: "PAGE_WATCH", url, time: video.currentTime, duration: video.duration, at }).catch(() => {});
-  }
-  for (const event of ["playing", "timeupdate", "seeked", "pause", "ended"]) {
-    document.addEventListener(event, e => progress(e.target, event), true);
-  }
-  const flush = () => { for (const video of watched.keys()) { if (video.isConnected) progress(video, "flush"); else watched.delete(video); } };
-  document.addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
-  window.addEventListener("pagehide", flush);
   window.addEventListener("popstate", schedule);
   globalThis[key] = { scan };
   return scan();

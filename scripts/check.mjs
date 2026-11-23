@@ -26,7 +26,7 @@ for (const file of files) {
   const check = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (check.status !== 0) throw new Error(`${relative(root, file)}: ${check.stderr}`);
 }
-for (const page of ["popup.html", "player.html", "mobile.html"]) {
+for (const page of ["popup.html", "player.html"]) {
   const html = await readFile(join(extension, page), "utf8");
   if (/<script[^>]+src=["']https?:/i.test(html)) throw new Error("Remote executable code is not allowed");
   for (const match of html.matchAll(/(?:src|href)="([^"#]+)"/g)) await access(join(extension, match[1]));

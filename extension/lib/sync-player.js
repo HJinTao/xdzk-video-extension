@@ -145,10 +145,8 @@ export class SyncPlayer {
 
   pauseElements() {
     this.videos.forEach((video, index) => {
-      // Both cameras can signal waiting before either queued pause event arrives.
-      if (video.paused) return;
-      this.expected[index].playing = false;
-      video.pause();
+      if (!video.paused) { this.expected[index].playing = false; video.pause(); }
+      else delete this.expected[index].playing;
     });
   }
 
