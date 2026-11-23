@@ -14,6 +14,11 @@ export function isPlatformUrl(value) {
   return parseHttpUrl(value)?.hostname === PLATFORM_HOST;
 }
 
+export function isCourseSubtitleUrl(value) {
+  const url = parseHttpUrl(value);
+  return url?.hostname === PLATFORM_HOST && /\/getVideoSubtitles2Vtt$/i.test(url.pathname) && !!url.searchParams.get("workDetailId");
+}
+
 export function isMediaUrl(value) {
   const url = parseHttpUrl(value);
   return !!url && url.hostname === VIDEO_HOST && /\.mp4$/i.test(url.pathname);

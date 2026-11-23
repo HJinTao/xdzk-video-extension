@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>双路同步播放 · 西电智课</title>
   <link rel="stylesheet" href="player.css">
+  <link rel="stylesheet" href="subtitles.css">
+  <link rel="stylesheet" href="playback.css">
   <script type="module" src="player.js"></script>
 </head>
 <body>
@@ -13,12 +15,12 @@
     <p class="intro">直接在线播放，无需先下载整段录播。两路画面共用播放进度，声音可单独选择。</p>
     <p id="message" role="status" aria-live="polite" hidden></p>
     <section class="screens" aria-label="同步视频">
-      <article><label for="source-0">画面 1</label><select id="source-0" aria-label="画面 1 视频源"></select><video id="video-0" controls playsinline preload="metadata"></video></article>
-      <article><label for="source-1">画面 2</label><select id="source-1" aria-label="画面 2 视频源"></select><video id="video-1" controls playsinline preload="metadata" muted></video></article>
+      <article><label for="source-0">画面 1</label><select id="source-0" aria-label="画面 1 视频源"></select><div class="lecture-player" role="group" aria-label="画面 1 播放器"><video id="video-0" playsinline preload="metadata"></video></div><div class="subtitles" id="subtitles-0" role="group" aria-label="画面 1 字幕" hidden></div></article>
+      <article><label for="source-1">画面 2</label><select id="source-1" aria-label="画面 2 视频源"></select><div class="lecture-player" role="group" aria-label="画面 2 播放器"><video id="video-1" playsinline preload="metadata" muted></video></div><div class="subtitles" id="subtitles-1" role="group" aria-label="画面 2 字幕" hidden></div></article>
     </section>
     <section class="controls" aria-label="同步播放控制">
       <div class="timeline"><span id="current">00:00</span><input id="timeline" type="range" min="0" max="1" value="0" step="0.1" aria-label="共同播放进度" disabled><span id="duration">--:--</span></div>
-      <div class="control-row"><button id="play" class="primary" disabled>播放</button><button id="back" disabled>后退 10 秒</button><button id="forward" disabled>前进 10 秒</button><span id="sync-status">等待两路视频就绪</span><label>倍速 <select id="rate"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label></div>
+      <div class="control-row"><button id="play" class="primary" disabled>播放</button><button id="back" disabled>后退 10 秒</button><button id="forward" disabled>前进 10 秒</button><span id="sync-status">等待两路视频就绪</span><div id="speed-control" class="speed-control" data-select-id="rate"></div></div>
       <div class="options"><fieldset><legend>播放声音</legend><label><input type="radio" name="audio" value="0" checked> 画面 1</label><label><input type="radio" name="audio" value="1"> 画面 2</label><label><input type="radio" name="audio" value="-1"> 全部静音</label></fieldset><label class="offset">画面 2 时间偏移 <input id="offset" type="number" value="0" step="0.1" min="-86400" max="86400"> 秒</label></div>
       <p class="hint">拖动任一视频的进度，另一路会跟随；暂停和倍速也会同步。若两路开头不同，可调整时间偏移，正数表示画面 2 播放到更靠后的位置。</p>
     </section>

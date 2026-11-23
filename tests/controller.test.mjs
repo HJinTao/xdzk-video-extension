@@ -128,3 +128,47 @@ test("a single video cannot open dual playback and player IDs are validated", as
   await assert.rejects(controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender), /至少需要两路/);
   await assert.rejects(controller.dispatch({ type: "GET_PLAYER", id: "tab:1" }, popupSender), /地址无效/);
 });
+
+test("preview and independent player read subtitles only from the recorded source document", async () => {
+  const { api, createdTabs } = createApi();
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  const request = { type: "GET_SUBTITLES", key: mediaKey(mediaUrl()), tabId: 1 };
+  const calls = [];
+  let result = { text: "WEBVTT\n\n00:00.000 --> 00:01.000\n字幕" };
+  api.scripting.executeScript = async (options) => { calls.push(options); return [{ result }]; };
+  assert.equal((await controller.dispatch(request, popupSender)).text, result.text);
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  const id = new URL(createdTabs[0].url).searchParams.get("id");
+  assert.equal((await controller.dispatch({ ...request, tabId: 999, id }, popupSender)).text, result.text);
+  assert.ok(calls.every((call) => call.target.tabId === 1 && call.target.documentIds[0] === pageSender.documentId && call.args[1] === pageSender.url));
+  await assert.rejects(controller.dispatch({ ...request, key: mediaKey(mediaUrl("other")) }, popupSender), /找不到这个画面/);
+  await assert.rejects(controller.dispatch(request, pageSender), /扩展面板/);
+  assert.equal(calls.length, 2);
+  result = { stale: true };
+  await assert.rejects(controller.dispatch(request, popupSender), /对应课次/);
+  result = { failed: false };
+  await assert.rejects(controller.dispatch(request, popupSender), /没有可用/);
+  result = { failed: true };
+  await assert.rejects(controller.dispatch(request, popupSender), /已登录/);
+});
+
+test("remembers the current frame's subtitle GET before its first scan and drops it on lesson change", async () => {
+  const { api, session } = createApi();
+  const controller = createController(api);
+  const url = new URL("getVideoSubtitles2Vtt?workDetailId=200", pageSender.url).href;
+  const request = { ...response(), url, method: "GET", statusCode: 200 };
+  await controller.recordResponse(request);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.recordResponse({ ...request, url: url.replace("=200", "=201") });
+  await controller.recordResponse({ ...request, documentId: "previous-document", url: url + "&old=1" });
+  await controller.recordResponse({ ...request, method: "POST", url: url + "&post=1" });
+  await controller.recordResponse({ ...request, url: url.replace("newes.chaoxing.com", "other.test") });
+  let observed;
+  api.scripting.executeScript = async ({ args }) => { observed = args[2]; return [{ result: { text: "fixture" } }]; };
+  await controller.dispatch({ type: "GET_SUBTITLES", tabId: 1, key: mediaKey(mediaUrl()) }, popupSender);
+  assert.equal(observed, url);
+  const next = pageSender.url.replace("=200", "=201");
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot: { ...snapshot, url: next } }, { ...pageSender, url: next });
+  assert.equal(session["tab:1"].frames[0].subtitleUrl, undefined);
+});

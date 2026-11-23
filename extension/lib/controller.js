@@ -1,5 +1,6 @@
-import { downloadFilename, isMediaUrl, isPlatformUrl, responseSize, sanitizeName } from "./media.js";
+import { downloadFilename, isCourseSubtitleUrl, isMediaUrl, isPlatformUrl, responseSize, sanitizeName } from "./media.js";
 import { applySnapshot, emptyState, sortedMedia, upsertMedia } from "./state.js";
+import { readCourseSubtitles } from "./course-subtitles.js";
 
 const storageKey = (tabId) => `tab:${tabId}`;
 const supportedUrl = (url) => isPlatformUrl(url) || isMediaUrl(url);
@@ -169,20 +170,46 @@ export function createController(api) {
     return { ok: true };
   }
 
-  async function playerData(id, refresh) {
+  async function readPlayer(id) {
     if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new Error("播放器地址无效，请从扩展面板重新打开。");
     const key = `player:${id}`;
-    let payload = (await api.storage.session.get(key))[key];
+    const payload = (await api.storage.session.get(key))[key];
     if (!payload) throw new Error("本次播放记录已清除，请回到回放页面重新打开同步播放。");
+    return payload;
+  }
+
+  async function playerData(id, refresh) {
+    let payload = await readPlayer(id);
     let notice = "";
     if (refresh) {
       const latest = await view(payload.sourceTabId);
       if (latest.supported && latest.media.length >= 2) {
         payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
-        await api.storage.session.set({ [key]: payload });
+        await api.storage.session.set({ [`player:${id}`]: payload });
       } else notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
     }
     return { ok: true, courseTitle: payload.courseTitle, media: payload.media, notice };
+  }
+
+  async function subtitles(message) {
+    const source = message.id !== undefined ? await readPlayer(message.id) : await enqueue(message.tabId, () => read(message.tabId));
+    const tabId = source.sourceTabId ?? source.tabId;
+    const item = source.media.find((media) => media.key === message.key);
+    if (!item) throw new Error("找不到这个画面的字幕，请重新识别回放。");
+    const target = item.documentId ? { tabId, documentIds: [item.documentId] } : { tabId, frameIds: [item.frameId ?? 0] };
+    let result;
+    try {
+      await tabFor(tabId);
+      const state = source.sourceTabId !== undefined ? await enqueue(tabId, () => read(tabId)) : source;
+      const frame = state.frames[item.frameId ?? 0];
+      const observedUrl = frame?.documentId === item.documentId ? frame?.subtitleUrl : "";
+      const [injection] = await api.scripting.executeScript({ target, func: readCourseSubtitles, args: [item.key, item.frameUrl || "", observedUrl || ""] });
+      result = injection?.result;
+    } catch { /* The source tab or iframe may have closed. */ }
+    if (!result || result.stale) throw new Error("请打开对应课次的原回放页，重新识别后读取课程字幕，或导入本地字幕。");
+    if (result.text || result.cues?.length) return { ok: true, ...result };
+    if (result.failed) throw new Error("读取课程字幕失败，请确认原回放页已登录后重试，或导入本地字幕。");
+    throw new Error("本次回放没有可用的课程字幕，可以导入 SRT 或 VTT 文件。");
   }
 
   async function dispatch(message, sender = {}) {
@@ -193,6 +220,7 @@ export function createController(api) {
     switch (message?.type) {
       case "OPEN_PLAYER": return openPlayer(tabId);
       case "GET_PLAYER": return playerData(message.id, !!message.refresh);
+      case "GET_SUBTITLES": return subtitles(message);
       case "GET_STATE": return view(tabId);
       case "SCAN_TAB": return scan(tabId);
       case "SET_TITLE": return edit(tabId, (state) => { state.titleOverride = sanitizeName(message.value, "课程录播", 60); });
@@ -217,15 +245,24 @@ export function createController(api) {
   }
 
   async function recordResponse(details) {
-    if (details.tabId < 0 || closedTabs.has(details.tabId) || !isMediaUrl(details.url) || ![200, 206].includes(details.statusCode)) return;
+    if (details.tabId < 0 || closedTabs.has(details.tabId) || ![200, 206].includes(details.statusCode)) return;
+    const subtitle = details.method === "GET" && isCourseSubtitleUrl(details.url);
+    if (!subtitle && !isMediaUrl(details.url)) return;
     const contentType = details.responseHeaders?.find((header) => header.name.toLowerCase() === "content-type")?.value || "";
-    if (contentType && !/^(video\/mp4|application\/octet-stream)(?:;|$)/i.test(contentType.trim())) return;
+    if (!subtitle && contentType && !/^(video\/mp4|application\/octet-stream)(?:;|$)/i.test(contentType.trim())) return;
     // Do not collect a matching video embedded on an unrelated website.
     try { await tabFor(details.tabId); } catch { return; }
     await enqueue(details.tabId, async () => {
       const state = await read(details.tabId);
       const frame = state.frames[details.frameId];
       if (frame?.documentId && details.documentId && frame.documentId !== details.documentId) return;
+      if (subtitle) {
+        const lesson = frame?.url && new URL(frame.url).searchParams.get("workDetailId");
+        if (lesson && new URL(details.url).searchParams.get("workDetailId") !== lesson) return;
+        state.frames[details.frameId] = { ...frame, documentId: details.documentId || frame?.documentId, subtitleUrl: details.url };
+        await save(state);
+        return;
+      }
       upsertMedia(state, {
         url: details.url, frameId: details.frameId ?? 0, documentId: details.documentId,
         frameUrl: frame?.url, size: responseSize(details.responseHeaders), source: "network"

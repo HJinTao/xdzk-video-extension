@@ -1,4 +1,7 @@
 import { formatBytes, formatDuration, recordingInfo } from "./lib/media.js";
+import { bindSubtitles } from "./lib/subtitles.js";
+import { createLecturePlayer } from "./lib/lecture-player.js";
+import { bindPlaybackSpeed } from "./lib/playback-speed.js";
 
 const $ = (id) => document.getElementById(id);
 const cards = new Map();
@@ -82,8 +85,13 @@ function updateProgress(card, media) {
 }
 
 function makeCard(key) {
-  const card = $("media-template").content.firstElementChild.cloneNode(true);
+  const card = document.importNode($("media-template").content.firstElementChild, true);
   card.dataset.key = key;
+  const video = card.querySelector("video");
+  card.subtitles = bindSubtitles(card.querySelector(".subtitles"), video, (key) => send("GET_SUBTITLES", { key }));
+  card.subtitles.setSource(key);
+  const speed = bindPlaybackSpeed(card.querySelector(".speed-control"), (value) => { video.defaultPlaybackRate = value; video.playbackRate = value; });
+  video.addEventListener("ratechange", () => speed.set(video.playbackRate));
   const name = card.querySelector(".channel-name");
   name.addEventListener("change", () => {
     card.pendingName = send("RENAME_MEDIA", { key, value: name.value }).then(render);
@@ -91,16 +99,15 @@ function makeCard(key) {
   });
   card.querySelector(".preview-button").addEventListener("click", () => {
     const panel = card.querySelector(".preview");
-    const video = panel.querySelector("video");
     panel.hidden = !panel.hidden;
     card.querySelector(".preview-button").textContent = panel.hidden ? "预览画面" : "收起预览";
     if (panel.hidden) {
       video.pause();
-      video.removeAttribute("src");
-      video.load();
+      card.player.reset();
     } else {
       card.querySelector(".preview-error").hidden = true;
-      video.src = card.media.url;
+      if (card.player) card.player.url = card.media.url;
+      else card.player = createLecturePlayer(video, card.media.url);
       video.play().catch(() => {});
     }
   });
@@ -140,7 +147,7 @@ function render(next) {
   $("open-player").disabled = busy || next.media.length < 2;
   $("copy-cloud-links").disabled = !next.media.length;
   const keys = new Set(next.media.map((media) => media.key));
-  for (const [key, card] of cards) if (!keys.has(key)) { card.remove(); cards.delete(key); }
+  for (const [key, card] of cards) if (!keys.has(key)) { card.subtitles.setSource(""); card.player?.destroy(); card.remove(); cards.delete(key); }
   next.media.forEach((media, index) => {
     let card = cards.get(media.key);
     if (!card) { card = makeCard(media.key); cards.set(media.key, card); }
@@ -212,5 +219,5 @@ async function init() {
   }, 1200);
 }
 
-window.addEventListener("pagehide", () => { clearInterval(poll); });
+window.addEventListener("pagehide", () => { clearInterval(poll); for (const card of cards.values()) card.player?.destroy(); });
 init().catch((error) => notice(error.message, true));

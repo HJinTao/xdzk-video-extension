@@ -1,0 +1,26 @@
+.lecture-player {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #080f13;
+}
+.lecture-player .art-video { max-height: none; border-radius: 0; }
+.speed-control, .speed-control label, .rate-values {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.control-row > .speed-control { margin-inline-start: auto; }
+.speed-control summary { cursor: pointer; padding: 4px; font-size: 12px; }
+.speed-control select, .speed-control input, .speed-control button {
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 4px 7px;
+  font: inherit;
+}
+.speed-control input { width: 5.2em; }
+.speed-control button { cursor: pointer; }
+.rate-values { padding: 4px; }
+.preview .speed-control { padding: 0 14px 10px; font-size: 13px; }

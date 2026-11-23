@@ -13,6 +13,16 @@ export const snapshot = {
 export const popupSender = { id: "test-extension", url: "chrome-extension://test-extension/popup.html" };
 export const pageSender = { id: "test-extension", tab: { id: 1 }, frameId: 0, documentId: "doc-a", url: pageUrl };
 
+// jsdom has no media renderer. Exercise page behavior against the same media element.
+export function createPlayerStub(video, url) {
+  video.src = url;
+  return {
+    set url(value) { video.src = value; },
+    reset() { video.removeAttribute("src"); video.load(); },
+    destroy() { this.reset(); }
+  };
+}
+
 export function createApi({ url = pageUrl } = {}) {
   const session = {};
   const local = {};

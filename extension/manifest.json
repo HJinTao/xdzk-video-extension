@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "西电智课 · 录播下载",
-  "description": "识别西电智课回放中的 MP4，双路同步播放、切换音源并保存到本地。",
-  "version": "0.2.0",
+  "description": "识别西电智课回放中的 MP4，双路同步播放、选择声音和字幕，并保存视频到本地。",
+  "version": "0.3.0",
   "minimum_chrome_version": "114",
   "permissions": ["activeTab", "scripting", "storage", "webRequest", "downloads"],
   "host_permissions": [
@@ -28,6 +28,6 @@
     "all_frames": true
   }],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; media-src https://kdlbptvideo.xidian.edu.cn http://kdlbptvideo.xidian.edu.cn; img-src 'self' data:; connect-src 'self' https://kdlbptvideo.xidian.edu.cn http://kdlbptvideo.xidian.edu.cn"
+    "extension_pages": "script-src 'self'; object-src 'self'; media-src blob: https://kdlbptvideo.xidian.edu.cn http://kdlbptvideo.xidian.edu.cn; img-src 'self' data:; connect-src 'self' https://kdlbptvideo.xidian.edu.cn http://kdlbptvideo.xidian.edu.cn"
   }
 }

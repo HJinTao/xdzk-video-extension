@@ -123,6 +123,8 @@ test("drift correction follows the chosen leader and never reverses the user see
     videos[0].position = 30; videos[1].position = 30.2;
     engine.tick(); await flush();
     assert.equal(videos[1].playbackRate, .96);
+    videos[1].emit("ratechange");
+    assert.equal(engine.rate, 1, "a second event reporting a correction must not change the requested speed");
     videos[1].position = 32;
     engine.tick(); await flush();
     assert.equal(videos[1].currentTime, 30);

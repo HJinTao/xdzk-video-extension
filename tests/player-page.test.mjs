@@ -4,14 +4,16 @@ import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { SyncPlayer, recordingOffset } from "../extension/lib/sync-player.js";
 import { mediaKey } from "../extension/lib/media.js";
-import { snapshot, mediaUrl } from "./fixtures.mjs";
+import { bindSubtitles } from "../extension/lib/subtitles.js";
+import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
+import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/player.html", import.meta.url), "utf8");
-const code = (await readFile(new URL("../extension/player.js", import.meta.url), "utf8")).replace(/^import .+;\r?\n/, "");
+const code = (await readFile(new URL("../extension/player.js", import.meta.url), "utf8")).replace(/^import .+;\r?$/gm, "");
 const flush = () => new Promise((done) => setTimeout(done, 15));
 async function page() {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPlaybackSpeed, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   dom.window.chrome = { runtime: { async sendMessage() {
     return { ok: true, courseTitle: "数据库系统", media: snapshot.media.map((item, index) => ({ ...item, key: mediaKey(item.url), label: `画面 ${index + 1}`, url: mediaUrl(index ? "CloudIPC-demo-b" : "CloudIPC-demo-a", stamp) })) };
@@ -71,5 +73,25 @@ test("selecting the same source twice disables playback with a useful message", 
     second.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
     assert.equal(document.querySelector("#play").disabled, true);
     assert.match(document.querySelector("#message").textContent, /两路不同/);
+  } finally { close(dom); }
+});
+
+test("both cameras follow extended presets, custom rates and 0.1 steps without overwriting the user's input", async () => {
+  const { dom, videos, document } = await page();
+  const select = document.querySelector("#rate");
+  const input = document.querySelector("#speed-control input");
+  const [slower, faster] = document.querySelectorAll("#speed-control button");
+  const change = (element) => element.dispatchEvent(new dom.window.Event("change"));
+  try {
+    for (const rate of [2.5, 3, 1]) {
+      select.value = rate; change(select);
+      assert.deepEqual(videos.map((v) => v.playbackRate), [rate, rate]);
+    }
+    faster.click(); assert.deepEqual(videos.map((v) => v.playbackRate), [1.1, 1.1]);
+    input.value = "1.37"; change(input);
+    slower.click(); assert.equal(select.value, "1.27");
+    assert.deepEqual(videos.map((v) => v.playbackRate), [1.27, 1.27]);
+    input.value = "8"; change(input); assert.equal(videos[0].playbackRate, 1.27);
+    input.value = "4"; change(input); assert.equal(faster.disabled, true);
   } finally { close(dom); }
 });

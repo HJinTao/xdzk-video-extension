@@ -1,4 +1,4 @@
-import { inferCourseTitle, isMediaUrl, mediaKey, preferUrl, recordingInfo } from "./media.js";
+import { inferCourseTitle, isMediaUrl, mediaKey, parseHttpUrl, preferUrl, recordingInfo } from "./media.js";
 
 export function emptyState(tabId) {
   return { tabId, courseTitle: "", titleQuality: 0, titleOverride: "", frames: {}, media: [], updatedAt: 0 };
@@ -35,11 +35,15 @@ export function applySnapshot(state, snapshot, frame = {}, now = Date.now()) {
   const documentId = frame.documentId || "";
   const frameUrl = frame.url || snapshot.url || "";
   let changedDocument = previous && documentId && previous.documentId && previous.documentId !== documentId;
-  if (previous && previous.url !== frameUrl) changedDocument = true;
+  if (previous?.url && previous.url !== frameUrl) changedDocument = true;
   if (changedDocument) {
     state.media = state.media.filter((item) => item.frameId !== frameId || (documentId && item.documentId === documentId));
   }
   state.frames[frameId] = { url: frameUrl, documentId, updatedAt: now };
+  const lesson = parseHttpUrl(frameUrl)?.searchParams.get("workDetailId");
+  if (!changedDocument && previous?.subtitleUrl && (!lesson || parseHttpUrl(previous.subtitleUrl)?.searchParams.get("workDetailId") === lesson)) {
+    state.frames[frameId].subtitleUrl = previous.subtitleUrl;
+  }
   if (snapshot.authoritative && Array.isArray(snapshot.media) && snapshot.media.length) {
     const currentKeys = new Set(snapshot.media.map((item) => mediaKey(item.url)).filter(Boolean));
     if (currentKeys.size) state.media = state.media.filter((item) => item.frameId !== frameId || currentKeys.has(item.key));

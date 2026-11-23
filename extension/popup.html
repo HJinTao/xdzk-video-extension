@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>西电智课录播下载</title>
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="subtitles.css">
+  <link rel="stylesheet" href="playback.css">
   <script type="module" src="popup.js"></script>
 </head>
 <body>
@@ -12,7 +14,7 @@
     <header class="header">
       <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4h11A1.5 1.5 0 0 1 19 5.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 13.5zM9 20h6M12 15v5M10 7l5 2.5-5 2.5z"/></svg></div>
       <div><h1>智课 · 录播助手</h1><p>同步看课堂，也能保存到本地。</p></div>
-      <span class="version">v0.2</span>
+      <span class="version">v0.3</span>
     </header>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -58,7 +60,7 @@
       <div class="card-heading"><span class="channel-number"></span><input class="channel-name" aria-label="画面名称" maxlength="32" autocomplete="off"><span class="file-type">MP4</span></div>
       <div class="media-facts"></div>
       <div class="camera-id" title="机位目录"></div>
-      <div class="preview" hidden><video controls preload="none" playsinline></video><p class="preview-error" hidden>预览暂时不可用。请刷新回放页面，再重新识别视频。</p></div>
+      <div class="preview" hidden><div class="lecture-player" role="group" aria-label="预览播放器"><video preload="none" playsinline></video></div><div class="subtitles" role="group" aria-label="预览字幕"></div><div class="speed-control"></div><p class="preview-error" hidden>预览暂时不可用。请刷新回放页面，再重新识别视频。</p></div>
       <div class="card-actions"><button class="button quiet preview-button">预览画面</button><button class="button quiet copy-button">复制链接</button><button class="button secondary download-button">下载视频 <span aria-hidden="true">↓</span></button></div>
       <div class="download-status" hidden><progress max="100" value="0" aria-label="下载进度"></progress><div class="progress-line"><span class="progress-label"></span><button class="text-button control-button"></button></div></div>
       <p class="card-error" role="status" hidden></p>

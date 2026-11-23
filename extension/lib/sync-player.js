@@ -1,3 +1,5 @@
+import { MIN_RATE, MAX_RATE } from "./playback-speed.js";
+
 // Browser media events arrive asynchronously. Keep expected commands until their
 // events arrive, so a programmatic seek/pause does not become a new user command.
 export class SyncPlayer {
@@ -35,7 +37,9 @@ export class SyncPlayer {
         this.pause();
       });
       this.listen(video, "ratechange", () => {
-        if (Math.abs(video.playbackRate - this.expected[index].rate) < .001) { delete this.expected[index].rate; return; }
+        // Multiple queued ratechange events can all report the latest correction.
+        if (Math.abs(video.playbackRate - this.expected[index].rate) < .001) return;
+        delete this.expected[index].rate;
         this.setRate(video.playbackRate);
       });
       this.listen(video, "waiting", () => {
@@ -109,7 +113,7 @@ export class SyncPlayer {
   }
 
   setRate(value) {
-    if (!Number.isFinite(value) || value < .25 || value > 4) return;
+    if (!Number.isFinite(value) || value < MIN_RATE || value > MAX_RATE) return;
     this.rate = value;
     this.videos.forEach((_, index) => this.setElementRate(index, value));
     this.emit();
@@ -190,7 +194,10 @@ export class SyncPlayer {
       const target = this.time() + (follower === 1 ? this.offset : 0);
       const difference = this.videos[follower].currentTime - target;
       if (Math.abs(difference) > .45) { this.setElementRate(follower, this.rate); this.setTime(follower, target); }
-      else this.setElementRate(follower, Math.abs(difference) > .08 ? this.rate * (difference > 0 ? .96 : 1.04) : this.rate);
+      else {
+        const corrected = Math.abs(difference) > .08 ? this.rate * (difference > 0 ? .96 : 1.04) : this.rate;
+        this.setElementRate(follower, Math.max(MIN_RATE, Math.min(MAX_RATE, corrected)));
+      }
     }
     this.emit();
   }

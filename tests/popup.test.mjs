@@ -4,10 +4,12 @@ import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { createController } from "../extension/lib/controller.js";
 import { formatBytes, formatDuration, recordingInfo } from "../extension/lib/media.js";
-import { createApi, snapshot, popupSender, pageSender } from "./fixtures.mjs";
+import { bindSubtitles } from "../extension/lib/subtitles.js";
+import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
+import { createApi, createPlayerStub, snapshot, popupSender, pageSender } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/popup.html", import.meta.url), "utf8");
-const code = (await readFile(new URL("../extension/popup.js", import.meta.url), "utf8")).replace(/^import .+;\r?\n/, "");
+const code = (await readFile(new URL("../extension/popup.js", import.meta.url), "utf8")).replace(/^import .+;\r?$/gm, "");
 
 async function until(predicate) {
   const end = Date.now() + 3000;
@@ -22,8 +24,8 @@ async function mount(options = {}) {
   const controller = createController(fixture.api);
   const dom = new JSDOM(html, { url: popupSender.url, runScripts: "outside-only", pretendToBeVisual: true });
   fixture.api.runtime.sendMessage = (message) => controller.dispatch(message, popupSender);
-  fixture.api.scripting.executeScript = async () => { await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender); return []; };
-  Object.assign(dom.window, { chrome: fixture.api, formatBytes, formatDuration, recordingInfo });
+  fixture.api.scripting.executeScript = async () => { await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot: options.snapshot ?? snapshot }, pageSender); return []; };
+  Object.assign(dom.window, { chrome: fixture.api, formatBytes, formatDuration, recordingInfo, bindSubtitles, bindPlaybackSpeed, createLecturePlayer: createPlayerStub });
   dom.window.HTMLMediaElement.prototype.play = () => Promise.resolve();
   dom.window.HTMLMediaElement.prototype.pause = () => {};
   dom.window.HTMLMediaElement.prototype.load = () => {};
@@ -112,6 +114,27 @@ test("the popup opens synchronized playback in a new tab without starting a down
     await until(() => document.querySelector("#notice").textContent.includes("同步播放"));
     assert.match(createdTabs[0].url, /player\.html\?id=/);
     assert.equal(downloadCalls.length, 0);
+  } finally { dom.window.close(); }
+});
+
+test("a single-camera preview can load a local subtitle into the popup document", async () => {
+  const { document, dom } = await mount({ snapshot: { ...snapshot, media: snapshot.media.slice(0, 1) } });
+  const { URL, HTMLTrackElement, Event } = dom.window;
+  URL.createObjectURL = () => "blob:preview-subtitle";
+  URL.revokeObjectURL = () => {};
+  const track = { mode: "disabled", cues: [{ text: "示例" }] };
+  Object.defineProperty(HTMLTrackElement.prototype, "track", { get: () => track });
+  try {
+    await until(() => document.querySelector(".media-card"));
+    const card = document.querySelector(".media-card");
+    card.querySelector(".preview-button").click();
+    const input = card.querySelector('.subtitles input[type="file"]');
+    Object.defineProperty(input, "files", { value: [{ name: "课程.srt", text: async () => "1\n00:00:01,000 --> 00:00:02,000\n示例" }] });
+    input.dispatchEvent(new Event("change"));
+    await until(() => card.querySelector("track"));
+    card.querySelector("track").dispatchEvent(new Event("load"));
+    assert.equal(track.mode, "showing");
+    assert.equal(card.querySelector(".subtitle-mode").selectedOptions[0].textContent, "课程.srt");
   } finally { dom.window.close(); }
 });
 

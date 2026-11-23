@@ -1,13 +1,23 @@
 import { SyncPlayer, recordingOffset } from "./lib/sync-player.js";
+import { bindSubtitles } from "./lib/subtitles.js";
+import { createLecturePlayer } from "./lib/lecture-player.js";
+import { bindPlaybackSpeed } from "./lib/playback-speed.js";
 
 const $ = (id) => document.getElementById(id);
 const videos = [$("video-0"), $("video-1")];
 const id = new URL(location.href).searchParams.get("id");
+const subtitles = videos.map((video, index) => bindSubtitles($("subtitles-" + index), video, async (key) => {
+  const result = await chrome.runtime.sendMessage({ type: "GET_SUBTITLES", id, key });
+  if (!result?.ok) throw new Error(result?.error || "读取课程字幕失败，请重试。");
+  return result;
+}));
 let engine;
 let media = [];
 let editingTimeline = false;
 let savedAudio = 0;
 let savedRate = 1;
+const players = [];
+const speedControl = bindPlaybackSpeed($("speed-control"), (value) => { savedRate = value; engine?.setRate(value); });
 
 function message(text = "") { $("message").textContent = text; $("message").hidden = !text; }
 function clock(seconds) {
@@ -27,10 +37,7 @@ function stateChanged(state) {
     $("duration").textContent = clock(state.range.end);
   }
   $("current").textContent = clock(editingTimeline ? Number($("timeline").value) : state.time);
-  if (![...$("rate").options].some((option) => Number(option.value) === state.rate)) {
-    const option = document.createElement("option"); option.value = state.rate; option.textContent = `${state.rate}×`; $("rate").append(option);
-  }
-  $("rate").value = String(state.rate);
+  speedControl.set(state.rate);
   savedRate = state.rate;
 }
 
@@ -40,9 +47,15 @@ function loadPair({ preserve = false } = {}) {
   const rate = engine?.rate || savedRate;
   engine?.destroy();
   const pair = [$("source-0").value, $("source-1").value].map((key) => media.find((item) => item.key === key));
-  if (!pair.every(Boolean) || pair[0].key === pair[1].key) { engine = null; stateChanged({ time: 0, range: null, playing: false, rate: savedRate }); message("请选择两路不同的画面。"); return; }
+  const valid = pair.every(Boolean) && pair[0].key !== pair[1].key;
+  subtitles.forEach((control, index) => control.setSource(valid ? pair[index].key : ""));
+  if (!valid) { engine = null; players.forEach((player) => player.reset()); stateChanged({ time: 0, range: null, playing: false, rate: savedRate }); message("请选择两路不同的画面。"); return; }
   message();
-  videos.forEach((video, index) => { video.src = pair[index].url; video.load(); });
+  videos.forEach((video, index) => {
+    if (players[index]) players[index].url = pair[index].url;
+    else players[index] = createLecturePlayer(video, pair[index].url);
+    video.load();
+  });
   engine = new SyncPlayer(videos, { onState: stateChanged, onError: message });
   const offset = previousOffset ?? recordingOffset(pair[0].url, pair[1].url);
   $("offset").value = offset;
@@ -85,10 +98,9 @@ $("forward").addEventListener("click", () => engine?.seek(engine.time() + 10));
 $("timeline").addEventListener("input", () => { editingTimeline = true; $("current").textContent = clock(Number($("timeline").value)); });
 $("timeline").addEventListener("change", () => { editingTimeline = false; engine?.seek(Number($("timeline").value)); });
 $("timeline").addEventListener("blur", () => { if (editingTimeline) { editingTimeline = false; engine?.seek(Number($("timeline").value)); } });
-$("rate").addEventListener("change", () => { savedRate = Number($("rate").value); engine?.setRate(savedRate); });
 $("offset").addEventListener("change", () => { if ($("offset").checkValidity()) engine?.setOffset(Number($("offset").value)); });
 document.querySelectorAll('input[name="audio"]').forEach((radio) => radio.addEventListener("change", () => { savedAudio = Number(radio.value); engine?.setAudio(savedAudio); }));
 for (let index = 0; index < 2; index++) $("source-" + index).addEventListener("change", () => loadPair());
 $("refresh").addEventListener("click", () => { void load({ refresh: true }); });
-window.addEventListener("pagehide", () => engine?.destroy());
+window.addEventListener("pagehide", () => { engine?.destroy(); players.forEach((player) => player.destroy()); });
 void load();

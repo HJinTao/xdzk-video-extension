@@ -1,0 +1,127 @@
+const timingLine = /^((?:\d+:)?\d{2}:\d{2})[.,](\d{3})[ \t]+-->[ \t]+((?:\d+:)?\d{2}:\d{2})[.,](\d{3})(?=[ \t]|$)/gm;
+
+function timestamp(seconds) {
+  const ms = Math.round(seconds * 1000);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${pad(Math.floor(ms / 3600000))}:${pad(Math.floor(ms / 60000) % 60)}:${pad(Math.floor(ms / 1000) % 60)}.${String(ms % 1000).padStart(3, "0")}`;
+}
+
+export function toWebVtt({ text, cues } = {}) {
+  if (cues?.length) {
+    text = cues.map((cue) => `${timestamp(cue.startTime)} --> ${timestamp(cue.endTime)}\n${cue.text}`).join("\n\n");
+  }
+  const body = (text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
+  if (!body.match(timingLine)) throw new Error("没有找到带时间码的字幕，请选择有效的 SRT 或 VTT 文件。");
+  if (/^WEBVTT(?:[ \t\n]|$)/.test(body)) return body;
+  return "WEBVTT\n\n" + body.replace(timingLine, "$1.$2 --> $3.$4") + "\n";
+}
+
+// One control belongs to one video, so native seeking, speed and fullscreen all
+// use that video's own clock, including when the two cameras have an offset.
+export function bindSubtitles(container, video, readCourse) {
+  const doc = container.ownerDocument;
+  const view = doc.defaultView;
+  container.innerHTML = `<label>字幕 <select class="subtitle-mode"><option value="off">关闭</option><option value="course">课程字幕</option></select></label>
+    <button type="button" class="subtitle-import">导入字幕</button><input type="file" accept=".srt,.vtt" hidden>
+    <small class="subtitle-status" role="status" hidden></small>`;
+  const select = container.querySelector("select");
+  const input = container.querySelector("input");
+  const status = container.querySelector("small");
+  let key = "";
+  let revision = 0;
+  let active, pending, course, local;
+
+  function notify(text = "") {
+    status.textContent = text;
+    status.hidden = !text;
+  }
+  function remove(track) {
+    if (!track) return;
+    track.element.remove();
+    view.URL.revokeObjectURL(track.url);
+  }
+  function start() {
+    revision++;
+    remove(pending);
+    pending = null;
+    notify();
+    return revision;
+  }
+  function fail(text) {
+    remove(pending);
+    pending = null;
+    select.value = active?.element.track.mode === "showing" ? active.mode : "off";
+    notify(text);
+  }
+  function attach(mode, data, version) {
+    const element = doc.createElement("track");
+    element.kind = "captions";
+    element.label = data.label;
+    const url = view.URL.createObjectURL(new view.Blob([data.vtt], { type: "text/vtt;charset=utf-8" }));
+    pending = { element, url, mode };
+    element.addEventListener("error", () => {
+      if (revision === version && pending?.element === element) fail("字幕加载失败，请重新选择课程字幕或导入本地文件。");
+    });
+    element.addEventListener("load", () => {
+      if (revision !== version || pending?.element !== element) return;
+      if (!element.track.cues?.length) { fail("这份字幕没有可显示的内容，请导入有效的字幕文件。"); return; }
+      remove(active);
+      active = pending;
+      pending = null;
+      if (mode === "file") {
+        local = data;
+        let option = select.querySelector('[value="file"]');
+        if (!option) { option = doc.createElement("option"); option.value = "file"; select.append(option); }
+        option.textContent = data.label;
+      } else course = data;
+      element.track.mode = "showing";
+      select.value = mode;
+      notify();
+    });
+    element.src = url;
+    video.append(element);
+    element.track.mode = "hidden"; // Let Chrome parse the new track before replacing the visible one.
+  }
+  select.addEventListener("change", async () => {
+    const mode = select.value;
+    const version = start();
+    if (mode === "off") { remove(active); active = null; return; }
+    try {
+      let data = mode === "file" ? local : course;
+      if (!data) {
+        notify("正在读取课程字幕…");
+        const result = await readCourse(key);
+        if (revision !== version) return;
+        data = { label: "课程字幕", vtt: toWebVtt(result) };
+      }
+      attach(mode, data, version);
+    } catch (error) { if (revision === version) fail(error.message); }
+  });
+  container.querySelector("button").addEventListener("click", () => input.click());
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    input.value = "";
+    if (!file) return;
+    const version = start();
+    try {
+      if (!/\.(srt|vtt)$/i.test(file.name)) throw new Error("请选择 SRT 或 VTT 字幕文件。");
+      const text = await file.text();
+      if (revision === version) attach("file", { label: file.name, vtt: toWebVtt({ text }) }, version);
+    } catch (error) { if (revision === version) fail(error.message); }
+  });
+  video.textTracks?.addEventListener?.("change", () => {
+    if (active && !pending && status.hidden) select.value = active.element.track.mode === "showing" ? active.mode : "off";
+  });
+  return {
+    setSource(nextKey) {
+      container.hidden = !nextKey;
+      if (key === nextKey) return;
+      start();
+      key = nextKey;
+      remove(active);
+      active = course = local = null;
+      select.querySelector('[value="file"]')?.remove();
+      select.value = "off";
+    }
+  };
+}

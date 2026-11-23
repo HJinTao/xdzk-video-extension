@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => { void controller.recordResponse(details).catch(() => {}); },
-  { urls: ["https://kdlbptvideo.xidian.edu.cn/*", "http://kdlbptvideo.xidian.edu.cn/*"] },
+  { urls: ["https://kdlbptvideo.xidian.edu.cn/*", "http://kdlbptvideo.xidian.edu.cn/*", "*://newes.chaoxing.com/*getVideoSubtitles2Vtt*"] },
   ["responseHeaders"]
 );
 
