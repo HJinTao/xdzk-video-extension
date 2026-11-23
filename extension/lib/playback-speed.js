@@ -5,11 +5,11 @@ export const PRESET_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
 export function bindPlaybackSpeed(panel, changeRate) {
   const doc = panel.ownerDocument;
   panel.innerHTML = `<label>倍速 <select aria-label="播放倍速"></select></label>
-    <details><summary>自定义倍速</summary><div class="rate-values">
-      <button type="button" aria-label="减慢 0.1 倍">−0.1×</button>
-      <label><input type="number" step="any" inputmode="decimal" aria-label="自定义播放倍速"> ×</label>
-      <button type="button" aria-label="加快 0.1 倍">+0.1×</button>
-    </div></details>`;
+    <button type="button" aria-label="减慢 0.1 倍">−0.1×</button>
+    <button type="button" aria-label="加快 0.1 倍">+0.1×</button>
+    <details><summary>自定义倍速</summary><label class="rate-values">
+      <input type="number" step="any" inputmode="decimal" aria-label="自定义播放倍速"> ×
+    </label></details>`;
   const select = panel.querySelector("select");
   if (panel.dataset.selectId) select.id = panel.dataset.selectId;
   const input = panel.querySelector("input");

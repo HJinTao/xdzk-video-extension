@@ -18,7 +18,7 @@ export function toWebVtt({ text, cues } = {}) {
 
 // One control belongs to one video, so native seeking, speed and fullscreen all
 // use that video's own clock, including when the two cameras have an offset.
-export function bindSubtitles(container, video, readCourse) {
+export function bindSubtitles(container, video, readCourse, onTrackChange = () => {}) {
   const doc = container.ownerDocument;
   const view = doc.defaultView;
   container.innerHTML = `<label>字幕 <select class="subtitle-mode"><option value="off">关闭</option><option value="course">课程字幕</option></select></label>
@@ -29,8 +29,14 @@ export function bindSubtitles(container, video, readCourse) {
   const status = container.querySelector("small");
   let key = "";
   let revision = 0;
+  let tried = false;
+  let display = true;
   let active, pending, course, local;
 
+  function selectedTrack() {
+    const track = active?.element.track;
+    return track && (track.mode === "showing" || (!display && track.mode === "hidden")) ? track : null;
+  }
   function notify(text = "") {
     status.textContent = text;
     status.hidden = !text;
@@ -50,7 +56,7 @@ export function bindSubtitles(container, video, readCourse) {
   function fail(text) {
     remove(pending);
     pending = null;
-    select.value = active?.element.track.mode === "showing" ? active.mode : "off";
+    select.value = selectedTrack() ? active.mode : "off";
     notify(text);
   }
   function attach(mode, data, version) {
@@ -74,18 +80,20 @@ export function bindSubtitles(container, video, readCourse) {
         if (!option) { option = doc.createElement("option"); option.value = "file"; select.append(option); }
         option.textContent = data.label;
       } else course = data;
-      element.track.mode = "showing";
+      element.track.mode = display ? "showing" : "hidden";
       select.value = mode;
       notify();
+      onTrackChange(element.track);
     });
     element.src = url;
     video.append(element);
     element.track.mode = "hidden"; // Let Chrome parse the new track before replacing the visible one.
   }
-  select.addEventListener("change", async () => {
+  async function selectTrack() {
+    tried = true;
     const mode = select.value;
     const version = start();
-    if (mode === "off") { remove(active); active = null; return; }
+    if (mode === "off") { remove(active); active = null; onTrackChange(null); return; }
     try {
       let data = mode === "file" ? local : course;
       if (!data) {
@@ -96,12 +104,14 @@ export function bindSubtitles(container, video, readCourse) {
       }
       attach(mode, data, version);
     } catch (error) { if (revision === version) fail(error.message); }
-  });
+  }
+  select.addEventListener("change", selectTrack);
   container.querySelector("button").addEventListener("click", () => input.click());
   input.addEventListener("change", async () => {
     const file = input.files[0];
     input.value = "";
     if (!file) return;
+    tried = true;
     const version = start();
     try {
       if (!/\.(srt|vtt)$/i.test(file.name)) throw new Error("请选择 SRT 或 VTT 字幕文件。");
@@ -110,18 +120,37 @@ export function bindSubtitles(container, video, readCourse) {
     } catch (error) { if (revision === version) fail(error.message); }
   });
   video.textTracks?.addEventListener?.("change", () => {
-    if (active && !pending && status.hidden) select.value = active.element.track.mode === "showing" ? active.mode : "off";
+    if (active && !pending && status.hidden) {
+      const track = selectedTrack();
+      select.value = track ? active.mode : "off";
+      onTrackChange(track);
+    }
   });
   return {
+    get track() { return selectedTrack(); },
+    setDisplay(visible) {
+      display = visible;
+      if (active) {
+        active.element.track.mode = visible ? "showing" : "hidden";
+        onTrackChange(active.element.track);
+      }
+    },
+    ensureCourse() {
+      if (!key || tried) return;
+      select.value = "course";
+      void selectTrack();
+    },
     setSource(nextKey) {
       container.hidden = !nextKey;
       if (key === nextKey) return;
       start();
       key = nextKey;
+      tried = false;
       remove(active);
       active = course = local = null;
       select.querySelector('[value="file"]')?.remove();
       select.value = "off";
+      onTrackChange(null);
     }
   };
 }

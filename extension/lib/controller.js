@@ -27,7 +27,7 @@ export function createController(api) {
     await api.storage.session.set({ [storageKey(state.tabId)]: state });
     try {
       await api.action.setBadgeText({ tabId: state.tabId, text: state.media.length ? String(state.media.length) : "" });
-      await api.action.setBadgeBackgroundColor({ tabId: state.tabId, color: "#177c78" });
+      await api.action.setBadgeBackgroundColor({ tabId: state.tabId, color: "#795219" });
     } catch { /* A tab may close between the state update and the badge update. */ }
   }
 

@@ -138,18 +138,15 @@ test("a single-camera preview can load a local subtitle into the popup document"
   } finally { dom.window.close(); }
 });
 
-test("123 cloud assistance copies full links and opens the official site without claiming an upload", async () => {
-  const fixture = await mount();
-  const { document, dom, createdTabs, downloadCalls } = fixture;
+test("watching is the primary action and local downloads remain available for a single recording", async () => {
+  const { document, dom } = await mount({ snapshot: { ...snapshot, media: snapshot.media.slice(0, 1) } });
   try {
-    await until(() => document.querySelectorAll(".media-card").length === 2 && !document.querySelector("#copy-cloud-links").disabled);
-    document.querySelector("#copy-cloud-links").click();
-    await until(() => document.querySelector("#notice").textContent.includes("当前尚未上传"));
-    assert.equal(fixture.clipboard().split("\n").length, 2);
-    assert.ok(fixture.clipboard().split("\n").every((line) => line.includes("auth_key=")));
-    document.querySelector("#open-cloud").click();
-    await until(() => createdTabs.length === 1);
-    assert.equal(createdTabs[0].url, "https://yun.123pan.cn/");
-    assert.equal(downloadCalls.length, 0);
+    await until(() => document.querySelector(".media-card") && !document.querySelector("#scan").disabled);
+    const watch = document.querySelector("#open-player");
+    assert.equal(watch.closest(".course-section") !== null, true);
+    assert.equal(watch.disabled, true);
+    assert.equal(document.querySelector("#download-all").disabled, false);
+    assert.equal(document.querySelector(".download-button").disabled, false);
+    assert.doesNotMatch(document.body.textContent, /云盘/);
   } finally { dom.window.close(); }
 });

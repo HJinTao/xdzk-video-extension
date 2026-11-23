@@ -1,0 +1,30 @@
+:root {
+  color-scheme: light;
+  --ink: #30281d;
+  --muted: #695d49;
+  --accent: #794e12;
+  --sun: #f6cf66;
+  --sun-hover: #edc04d;
+  --wash: #fff8e5;
+  --paper: #fffdf7;
+  --tint: #fff0c4;
+  --line: #e3d6b5;
+  --strong-line: #9b835b;
+  --error: #943e26;
+  --film: #201d1a;
+  font-family: "Inter", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color: var(--ink);
+  background: var(--wash);
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+button, select, input { font: inherit; }
+button, select, summary { cursor: pointer; }
+button:disabled, select:disabled { cursor: default; opacity: .55; }
+:is(button, summary, select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+input { accent-color: var(--accent); }
+[hidden] { display: none !important; }
+.icon {
+  flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}

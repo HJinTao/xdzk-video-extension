@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
 import { resolve, join } from "node:path";
 
-// Draw a small vector-style download mark and encode PNGs without external tools.
+// Draw the replay mark and encode PNGs without external tools.
 const table = new Uint32Array(256);
 for (let n = 0; n < 256; n++) {
   let c = n;
@@ -22,12 +22,13 @@ function distance(x, y, ax, ay, bx, by) {
   const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2)));
   return Math.hypot(x - ax - t * (bx - ax), y - ay - t * (by - ay));
 }
-const strokes = [[12, 5.5, 12, 14], [8.5, 10.5, 12, 14], [12, 14, 15.5, 10.5], [6, 15, 6, 18], [6, 18, 18, 18], [18, 15, 18, 18]];
+const strokes = [[5, 6, 19, 6], [19, 6, 19, 16], [19, 16, 5, 16], [5, 16, 5, 6],
+  [10, 9, 14, 11], [14, 11, 10, 13], [10, 13, 10, 9], [9, 19, 15, 19]];
 function pixel(x, y) {
   const dx = Math.max(3.8 - x, 0, x - 20.2), dy = Math.max(3.8 - y, 0, y - 20.2);
   if (Math.hypot(dx, dy) > 3.5) return [0, 0, 0, 0];
-  const white = strokes.some((line) => distance(x, y, ...line) < 1.05);
-  return white ? [255, 255, 255, 255] : [22, 127, 122, 255];
+  const ink = strokes.some((line) => distance(x, y, ...line) < .9);
+  return ink ? [48, 40, 29, 255] : [246, 207, 102, 255];
 }
 await mkdir(resolve(import.meta.dirname, "../extension/icons"), { recursive: true });
 for (const size of [16, 32, 48, 128]) {

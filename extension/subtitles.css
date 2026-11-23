@@ -3,18 +3,18 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  padding: 10px 14px;
+  padding: 10px 0;
   font-size: 13px;
 }
 .subtitles label { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .subtitles .subtitle-mode, .subtitles .subtitle-import {
   font: inherit;
   color: inherit;
-  background: transparent;
-  border: 1px solid currentColor;
+  background: var(--paper);
+  border: 1px solid var(--strong-line);
   border-radius: 6px;
   padding: 4px 8px;
 }
-.subtitles .subtitle-mode { max-width: min(220px, 44vw); }
+.subtitles .subtitle-mode { min-width: 0; max-width: min(180px, 45vw); }
 .subtitles .subtitle-import { cursor: pointer; }
 .subtitles .subtitle-status { flex-basis: 100%; font-size: 12px; line-height: 1.5; }

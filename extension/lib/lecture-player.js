@@ -10,7 +10,7 @@ export function createLecturePlayer(video, url) {
     proxy: () => video,
     url,
     lang: "zh-cn",
-    theme: "#57c4b6",
+    theme: "#f6cf66",
     volume: 1,
     muted: video.muted,
     mutex: false,

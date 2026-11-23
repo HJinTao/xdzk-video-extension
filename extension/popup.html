@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>西电智课录播下载</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="subtitles.css">
   <link rel="stylesheet" href="playback.css">
@@ -12,9 +13,8 @@
 <body>
   <main class="app">
     <header class="header">
-      <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4h11A1.5 1.5 0 0 1 19 5.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 13.5zM9 20h6M12 15v5M10 7l5 2.5-5 2.5z"/></svg></div>
-      <div><h1>智课 · 录播助手</h1><p>同步看课堂，也能保存到本地。</p></div>
-      <span class="version">v0.3</span>
+      <img src="icons/icon32.png" width="32" height="32" alt="">
+      <h1>西电智课 · 录播助手</h1>
     </header>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -29,11 +29,12 @@
       <section class="course-section">
         <label for="course-name" class="eyebrow">当前课程 <span>可修改保存名称</span></label>
         <input id="course-name" class="course-name" type="text" maxlength="60" autocomplete="off" value="课程录播">
-        <div class="course-meta"><span class="status-dot"></span><span id="summary">正在识别当前页面…</span></div>
+        <div class="course-meta"><span id="summary">正在识别当前页面…</span></div>
+        <button id="open-player" class="button primary sync-open" disabled><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>同步看课</button>
       </section>
 
       <div class="toolbar">
-        <h2>录播画面 <span id="media-count">0</span></h2>
+        <h2>录播画面</h2>
         <button id="scan" class="button quiet"><span aria-hidden="true">↻</span> 重新识别</button>
       </div>
 
@@ -46,11 +47,8 @@
       <div id="media-list" class="media-list"></div>
 
       <footer class="footer">
-        <button id="open-player" class="button secondary sync-open" disabled>双路同步播放 ↗</button>
-        <details class="cloud-guide"><summary>存到 123 云盘</summary><p>复制视频链接，在 123 云盘新建离线任务。请先确认账号的离线下载权限；任务成功后才完成云端归档。</p><div><button id="copy-cloud-links" class="text-button" disabled>复制全部视频链接</button><button id="open-cloud" class="text-button">打开 123 云盘 ↗</button></div></details>
-        <label class="save-option"><input id="save-as" type="checkbox"> 每次选择保存位置</label>
-        <button id="download-all" class="button primary download-all" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4"/></svg>下载全部画面</button>
-        <div class="footer-note"><span>关闭面板后，下载仍会继续。</span><button id="open-downloads" class="text-button">查看下载 ↗</button></div>
+        <button id="download-all" class="button secondary download-all" disabled><svg viewBox="0 0 20 20" class="icon" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4"/></svg>下载全部画面</button>
+        <div class="footer-note"><label class="save-option"><input id="save-as" type="checkbox"> 每次选择保存位置</label><button id="open-downloads" class="text-button">查看下载 ↗</button></div>
       </footer>
     </div>
   </main>
@@ -59,7 +57,6 @@
     <article class="media-card">
       <div class="card-heading"><span class="channel-number"></span><input class="channel-name" aria-label="画面名称" maxlength="32" autocomplete="off"><span class="file-type">MP4</span></div>
       <div class="media-facts"></div>
-      <div class="camera-id" title="机位目录"></div>
       <div class="preview" hidden><div class="lecture-player" role="group" aria-label="预览播放器"><video preload="none" playsinline></video></div><div class="subtitles" role="group" aria-label="预览字幕"></div><div class="speed-control"></div><p class="preview-error" hidden>预览暂时不可用。请刷新回放页面，再重新识别视频。</p></div>
       <div class="card-actions"><button class="button quiet preview-button">预览画面</button><button class="button quiet copy-button">复制链接</button><button class="button secondary download-button">下载视频 <span aria-hidden="true">↓</span></button></div>
       <div class="download-status" hidden><progress max="100" value="0" aria-label="下载进度"></progress><div class="progress-line"><span class="progress-label"></span><button class="text-button control-button"></button></div></div>

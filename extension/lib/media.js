@@ -124,3 +124,10 @@ export function formatDuration(seconds) {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
+
+export function formatClock(seconds) {
+  const total = Math.max(0, Math.floor(seconds || 0));
+  const pad = (part) => String(part).padStart(2, "0");
+  const hours = Math.floor(total / 3600);
+  return (hours ? hours + ":" : "") + pad(Math.floor(total / 60) % 60) + ":" + pad(total % 60);
+}
