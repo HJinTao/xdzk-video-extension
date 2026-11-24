@@ -4,13 +4,19 @@ import { SyncPlayer, recordingOffset } from "../extension/lib/sync-player.js";
 import { mediaUrl } from "./fixtures.mjs";
 
 class Video extends EventTarget {
+  seekNumber = 0;
   constructor(duration = 120) { super(); this.duration = duration; this.readyState = 4; this.paused = true; this.seeking = false; this.position = 0; this.speed = 1; this.silent = false; }
   emit(type) { this.dispatchEvent(new Event(type)); }
   get currentTime() { return this.position; }
   set currentTime(value) {
+    const seek = ++this.seekNumber;
     this.position = value; this.seeking = true;
     queueMicrotask(() => this.emit("seeking"));
-    queueMicrotask(() => { this.seeking = false; this.emit("seeked"); });
+    queueMicrotask(() => {
+      if (seek !== this.seekNumber) return;
+      this.seeking = false;
+      this.emit("seeked");
+    });
   }
   get playbackRate() { return this.speed; }
   set playbackRate(value) { this.speed = value; queueMicrotask(() => this.emit("ratechange")); }
@@ -43,6 +49,34 @@ test("seeking either paused video updates the other without an event feedback lo
   } finally { engine.destroy(); }
 });
 
+test("buffered skips from the shared controls and either video keep both views playing", async (t) => {
+  const { videos, engine } = setup();
+  t.after(() => engine.destroy());
+  let pauses = 0;
+  for (const video of videos) {
+    video.buffered = { length: 2, start: (i) => [0, 10][i], end: (i) => [5, 100][i] };
+    video.addEventListener("pause", () => { pauses++; });
+    video.addEventListener("seeking", () => { video.readyState = 1; video.emit("waiting"); });
+    video.addEventListener("seeked", () => { video.readyState = 4; video.emit("canplay"); });
+  }
+  await engine.play();
+  engine.seek(engine.time() + 10);
+  engine.seek(engine.time() + 10);
+  await flush();
+  videos[1].currentTime += 5;
+  await flush();
+  videos[0].currentTime -= 5;
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [20, 20]);
+  assert.equal(pauses, 0);
+  assert.ok(engine.wantPlaying && videos.every((v) => !v.paused));
+
+  engine.pause();
+  engine.seek(40);
+  await flush();
+  assert.ok(!engine.wantPlaying && videos.every((v) => v.paused));
+});
+
 test("native play, pause and playback rate changes propagate to both videos", async () => {
   const { videos, engine, errors } = setup();
   try {
@@ -69,6 +103,45 @@ test("buffering pauses the pair without losing the intent to resume", async () =
     assert.ok(videos.every((video) => !video.paused));
     assert.equal(engine.buffering.size, 0);
   } finally { engine.destroy(); }
+});
+
+test("overlapping waits resume together unless the viewer pauses during buffering", async (t) => {
+  const { videos, engine } = setup();
+  t.after(() => engine.destroy());
+  await engine.play();
+  for (const cancel of [false, true]) {
+    for (const video of videos) { video.readyState = 2; video.emit("waiting"); }
+    await flush();
+    assert.equal(engine.wantPlaying, true);
+    videos[0].readyState = 4; videos[0].emit("canplay");
+    if (cancel) engine.pause();
+    assert.ok(videos.every((v) => v.paused));
+    videos[1].readyState = 4; videos[1].emit("canplay");
+    await flush();
+    assert.equal(engine.wantPlaying, !cancel);
+    assert.ok(videos.every((v) => v.paused === cancel));
+  }
+});
+
+test("finishing a buffered jump at the shared end waits for an explicit replay", async (t) => {
+  const { videos, engine } = setup();
+  t.after(() => engine.destroy());
+  videos[1].duration = 60;
+  await engine.play();
+  videos[1].readyState = 2;
+  videos[1].emit("waiting");
+  engine.seek(75);
+  await flush();
+  videos[1].readyState = 4;
+  videos[1].emit("canplay");
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [60, 60]);
+  assert.ok(!engine.wantPlaying && videos.every((v) => v.paused));
+
+  await engine.play();
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [0, 0]);
+  assert.ok(engine.wantPlaying && videos.every((v) => !v.paused));
 });
 
 test("buffering during an unresolved play ignores the resulting AbortError and resumes", async () => {

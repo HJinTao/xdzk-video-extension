@@ -1,7 +1,14 @@
 import { MIN_RATE, MAX_RATE } from "./playback-speed.js";
 
-// Browser media events arrive asynchronously. Keep expected commands until their
-// events arrive, so a programmatic seek/pause does not become a new user command.
+function isBufferedSeek(video) {
+  const { buffered, currentTime } = video;
+  if (!video.seeking || !buffered) return false;
+  for (let i = 0; i < buffered.length; i++) {
+    if (buffered.start(i) <= currentTime && currentTime < buffered.end(i)) return true;
+  }
+  return false;
+}
+
 export class SyncPlayer {
   constructor(videos, { onState = () => {}, onError = () => {}, interval = 250 } = {}) {
     if (videos.length !== 2) throw new Error("请选择两路画面。");
@@ -20,20 +27,20 @@ export class SyncPlayer {
     videos.forEach((video, index) => {
       this.listen(video, "seeking", () => this.onSeek(index));
       this.listen(video, "seeked", () => {
+        if (video.seeking) return;
         delete this.expected[index].seek;
-        this.buffering.delete(index);
         this.resumeIfReady();
         this.emit();
       });
+      // Queued events report the element's current state. Only a change away
+      // from the last commanded state is a new native play or pause.
       this.listen(video, "play", () => {
-        if (video.paused) return;
-        if (this.expected[index].playing === true) { delete this.expected[index].playing; return; }
+        if (video.paused || this.expected[index].playing === true) return;
         this.leader = index;
         void this.play();
       });
       this.listen(video, "pause", () => {
-        if (!video.paused) return;
-        if (this.expected[index].playing === false) { delete this.expected[index].playing; return; }
+        if (!video.paused || this.expected[index].playing === false) return;
         this.pause();
       });
       this.listen(video, "ratechange", () => {
@@ -43,13 +50,14 @@ export class SyncPlayer {
         this.setRate(video.playbackRate);
       });
       this.listen(video, "waiting", () => {
-        if (!this.wantPlaying) return;
+        // Chromium also sends waiting while it decodes an already buffered seek.
+        if (!this.wantPlaying || video.readyState >= 3 || isBufferedSeek(video)) return;
         this.buffering.add(index);
         this.generation += 1;
         this.pauseElements();
         this.emit();
       });
-      this.listen(video, "canplay", () => { this.buffering.delete(index); this.resumeIfReady(); this.emit(); });
+      this.listen(video, "canplay", () => { this.resumeIfReady(); this.emit(); });
       this.listen(video, "loadedmetadata", () => { this.seek(this.time()); this.emit(); });
       this.listen(video, "durationchange", () => this.emit());
       this.listen(video, "ended", () => { this.pause(); this.emit(); });
@@ -145,8 +153,8 @@ export class SyncPlayer {
 
   pauseElements() {
     this.videos.forEach((video, index) => {
-      if (!video.paused) { this.expected[index].playing = false; video.pause(); }
-      else delete this.expected[index].playing;
+      this.expected[index].playing = false;
+      if (!video.paused) video.pause();
     });
   }
 
@@ -163,14 +171,16 @@ export class SyncPlayer {
     if (this.destroyed) return;
     const range = this.range();
     if (!range) { this.pause(); this.onError("请等待两路视频就绪，并确认它们有重叠的播放时间。"); return; }
-    if (this.time() >= range.end - .1) this.seek(range.start);
-    else this.seek(this.time());
+    if (this.time() >= range.end - .1) {
+      if (this.wantPlaying) { this.pause(); return; }
+      this.seek(range.start);
+    } else this.seek(this.time());
     this.wantPlaying = true;
     if (this.buffering.size) { this.emit(); return; }
     const generation = ++this.generation;
     const results = await Promise.allSettled(this.videos.map((video, index) => {
-      if (!video.paused) return Promise.resolve();
       this.expected[index].playing = true;
+      if (!video.paused) return Promise.resolve();
       try { return Promise.resolve(video.play()); } catch (error) { return Promise.reject(error); }
     }));
     if (this.destroyed || generation !== this.generation) return;
@@ -182,7 +192,11 @@ export class SyncPlayer {
   }
 
   resumeIfReady() {
-    if (this.wantPlaying && !this.buffering.size && this.videos.every((video) => video.readyState >= 3 && !video.seeking)) void this.play();
+    if (!this.wantPlaying || !this.buffering.size) return;
+    if (this.videos.every((video) => video.readyState >= 3 && !video.seeking)) {
+      this.buffering.clear();
+      void this.play();
+    }
   }
 
   tick() {
