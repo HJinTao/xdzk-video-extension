@@ -12,18 +12,24 @@
 
 ### 用 ZIP 安装（推荐，适用于 Chrome 和 Edge）
 
-1. 下载 **xdzk-recorder-0.5.1.zip**，解压到一个打算长期保留的文件夹。安装后浏览器会继续从这里读取扩展。[下载 v0.5.1 安装包](https://github.com/Pais1ey/xdzk-video-extension/releases/download/v0.5.1/xdzk-recorder-0.5.1.zip)
+1. 下载 **xdzk-recorder-0.5.2.zip**，解压到一个打算长期保留的文件夹。安装后浏览器会继续从这里读取扩展。[下载 v0.5.2 安装包](https://github.com/Pais1ey/xdzk-video-extension/releases/download/v0.5.2/xdzk-recorder-0.5.2.zip)
 2. 在浏览器**地址栏**输入 `chrome://extensions/`（Chrome）或 `edge://extensions/`（Edge），按回车。
 3. 开启**开发者模式**，点击**加载已解压的扩展程序**（Load unpacked）。选择刚才解压的文件夹，选中的这一层应能直接看到 `manifest.json`。
-4. 扩展列表出现 **西电智课 · 录播下载**，版本显示 **0.5.1**，即安装成功。在浏览器工具栏的扩展菜单中固定它，再刷新已打开的课程回放页。
+4. 扩展列表出现 **西电智课 · 录播下载**，版本显示 **0.5.2**，即安装成功。在浏览器工具栏的扩展菜单中固定它，再刷新已打开的课程回放页。
 
-如果下载的是 GitHub 自动提供的 **Source code (zip)**，解压后请选择仓库里的 `extension` 子文件夹。已经装过 v0.6.0 的用户可以先在扩展管理页停用旧版，再按上面的步骤从新文件夹加载 v0.5.1。[Edge 官方安装图解](https://learn.microsoft.com/zh-cn/microsoft-edge/extensions/getting-started/extension-sideloading)
+如果下载的是 GitHub 自动提供的 **Source code (zip)**，解压后请选择仓库里的 `extension` 子文件夹。如果当前启用了 v0.6.0，可先在扩展管理页停用它，再从新文件夹加载 v0.5.2。[Edge 官方安装图解](https://learn.microsoft.com/zh-cn/microsoft-edge/extensions/getting-started/extension-sideloading)
+
+### 从 v0.5.1 解压版升级
+
+1. 将新版 ZIP 解压，用里面的文件覆盖原先加载的扩展目录，让新版 `manifest.json` 替换同一位置的旧文件。如果直接加载的是仓库中的 `extension` 文件夹，先将仓库更新到 v0.5.2。
+2. 在 `chrome://extensions/` 或 `edge://extensions/` 找到 **西电智课 · 录播下载**，点卡片上的 **重新加载**（圆形箭头），确认版本显示 **0.5.2**。
+3. 关闭之前打开的同步播放器，刷新学校的回放页，再从扩展面板打开 **同步看课**。
 
 ### 用签名 CRX 安装
 
-Linux 上的桌面 Chrome 支持手动安装打包扩展。下载 CRX，打开 `chrome://extensions/` 并开启开发者模式，将文件拖到页面中央，按提示添加扩展，再确认版本为 **0.5.1**。[下载 v0.5.1 签名 CRX](https://github.com/Pais1ey/xdzk-video-extension/releases/download/v0.5.1/xdzk-recorder-0.5.1.crx)
+Linux 上的桌面 Chrome 支持手动安装打包扩展。下载 CRX，打开 `chrome://extensions/` 并开启开发者模式，将文件拖到页面中央，按提示安装并确认版本为 **0.5.2**。已经通过这种方式安装 v0.5.1 的用户也可用新版 CRX 更新，两个版本使用同一签名。[下载 v0.5.2 签名 CRX](https://github.com/Pais1ey/xdzk-video-extension/releases/download/v0.5.2/xdzk-recorder-0.5.2.crx)
 
-Windows 和 macOS 上的个人 Chrome 用户请按上面的 ZIP 步骤安装。由组织管理的浏览器可由管理员通过策略部署 CRX。发布页也提供两个安装包的 SHA-256 校验值。[Chrome 官方分发说明](https://developer.chrome.com/docs/extensions/how-to/distribute) · [v0.5.1 发布页](https://github.com/Pais1ey/xdzk-video-extension/releases/tag/v0.5.1)
+Windows 和 macOS 上的个人 Chrome 用户请按上面的 ZIP 步骤安装。由组织管理的浏览器可由管理员通过策略部署 CRX。发布页也提供两个安装包的 SHA-256 校验值。[Chrome 官方分发说明](https://developer.chrome.com/docs/extensions/how-to/distribute) · [v0.5.2 发布页](https://github.com/Pais1ey/xdzk-video-extension/releases/tag/v0.5.2)
 
 ## 进入课程回放
 
@@ -41,7 +47,8 @@ Windows 和 macOS 上的个人 Chrome 用户请按上面的 ZIP 步骤安装。�
 
 | 操作 | 播放效果 |
 | --- | --- |
-| 播放、暂停、拖动进度条或前后跳 10 秒 | 课件和教室画面一起移动到对应时刻 |
+| 播放或暂停 | 同时控制课件和教室画面 |
+| 拖动进度条，点击 **−10 秒**、**+10 秒**，或在画面上按 **←**、**→** | 两路一起跳到新位置。播放中跳转会继续播放，如需缓冲则在两路就绪后续播。手动暂停后跳转会停在新位置 |
 | 点击**交换主副画面** | 对调两路画面的大小，保留当前进度和声音选择 |
 | 在**声音**中选画面 1、画面 2 或静音 | 只听选中画面的声音，或同时静音 |
 | 选择或输入**倍速** | 两路共用速度，可选 2.5×、3×，用按钮每次微调 0.1×，也可输入 0.25× 到 4× 的数值 |
