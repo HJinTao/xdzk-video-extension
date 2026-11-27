@@ -11,6 +11,8 @@ const $ = (id) => document.getElementById(id);
 const videos = [$("video-0"), $("video-1")];
 const id = new URL(location.href).searchParams.get("id");
 const AUTO_NEXT_SECONDS = 5;
+const AUTO_REFRESH_COOLDOWN_MS = 30_000;
+const LOGIN_PORTAL_URL = "https://xdspoc.xidian.edu.cn/";
 let engine;
 let media = [];
 let primary = 0;
@@ -30,6 +32,9 @@ let progressMap = {};
 let autoPlayNext = true;
 let playlistFilter = "all";
 let switchingLesson = false;
+let autoRefreshing = false;
+let autoRefreshFailedFor = "";
+let lastAutoRefreshSuccessAt = 0;
 let wasPlaying = false;
 let lastProgressSavedAt = 0;
 let lastSavedTime = -1;
@@ -51,7 +56,31 @@ const subtitles = videos.map((video, index) => bindSubtitles($("subtitles-" + in
 const updateCaptionPair = bindPairedSubtitles(videos, subtitles);
 document.querySelectorAll('.subtitle-mode option[value="off"]').forEach(option => { option.textContent = "跟随另一路"; });
 
-function message(text = "") { $("message").textContent = text; $("message").hidden = !text; }
+function message(text = "", { actions = [] } = {}) {
+  $("message-text").textContent = text;
+  const actionsBox = $("message-actions");
+  actionsBox.replaceChildren();
+  for (const action of actions) {
+    if (action.type === "link") {
+      const link = document.createElement("a");
+      link.className = "message-link";
+      link.href = action.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = action.label;
+      actionsBox.append(link);
+    } else if (action.type === "button") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "message-retry";
+      button.textContent = action.label;
+      button.addEventListener("click", action.onClick);
+      actionsBox.append(button);
+    }
+  }
+  actionsBox.hidden = actions.length === 0;
+  $("message").hidden = !text;
+}
 
 function updateSideLayout() {
   const reviewOpen = !$("review").hidden;
@@ -387,8 +416,68 @@ function stateChanged(state) {
   savedRate = state.rate;
 }
 
+function refreshFailureActions(reason) {
+  const retry = { type: "button", label: reason === "login" ? "更新视频源" : "重试更新视频源", onClick: () => { void load({ refresh: true }); } };
+  if (reason === "login") {
+    return [
+      { type: "link", label: "前往西电智课登录 ↗", href: LOGIN_PORTAL_URL },
+      retry
+    ];
+  }
+  if (reason === "network") return [retry];
+  return [];
+}
+
+async function autoRefreshSources({ resumeTime = 0, shouldPlay = false, fallbackMessage = "" } = {}) {
+  if (autoRefreshing || switchingLesson) return;
+  autoRefreshing = true;
+  $("refresh").disabled = true;
+  message("视频链接可能已过期，正在自动续签视频源…");
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "GET_PLAYER", id, refresh: true, auto: true });
+    if (!result?.ok || !Array.isArray(result.media) || result.media.length < 2) {
+      const err = new Error(result?.error || fallbackMessage);
+      if (result?.reason) err.reason = result.reason;
+      throw err;
+    }
+    if (result.currentLiveId) currentLiveId = result.currentLiveId;
+    autoRefreshFailedFor = "";
+    lastAutoRefreshSuccessAt = Date.now();
+    populateSources(result.media, { keepSelection: true });
+    loadPair({ preserve: true, resumeAt: resumeTime, autoplay: shouldPlay });
+    message(shouldPlay ? "已自动续签视频源并恢复播放。" : "已自动续签视频源，点击“播放”继续。");
+  } catch (error) {
+    // Stop automatic retries for this lesson after one failed attempt; route guidance by actual cause.
+    autoRefreshFailedFor = currentLiveId;
+    const reason = error?.reason || "";
+    const actions = refreshFailureActions(reason);
+    message(error?.message || fallbackMessage || "自动续签视频源失败，请刷新原回放页面后重试。", { actions });
+  } finally {
+    autoRefreshing = false;
+    $("refresh").disabled = false;
+  }
+}
+
+function handleEngineError(errorText, detail) {
+  const canAutoRefresh = detail?.kind === "media"
+    && !!currentLiveId
+    && !autoRefreshing
+    && !switchingLesson
+    && autoRefreshFailedFor !== currentLiveId
+    && (Date.now() - lastAutoRefreshSuccessAt) >= AUTO_REFRESH_COOLDOWN_MS;
+  if (canAutoRefresh) {
+    void autoRefreshSources({
+      resumeTime: engine?.time() || 0,
+      shouldPlay: !!detail.wasPlaying,
+      fallbackMessage: errorText
+    });
+    return;
+  }
+  message(errorText);
+}
+
 function loadPair({ preserve = false, resumeAt = 0, autoplay = false } = {}) {
-  const time = preserve ? engine?.time() || 0 : resumeAt;
+  const time = preserve ? (resumeAt || engine?.time() || 0) : resumeAt;
   const previousOffset = preserve ? engine?.offset : undefined;
   const rate = engine?.rate || savedRate;
   cancelCountdown();
@@ -426,7 +515,7 @@ function loadPair({ preserve = false, resumeAt = 0, autoplay = false } = {}) {
     else players[index] = createLecturePlayer(video, pair[index].url, { hotkey: false });
     video.load();
   });
-  engine = new SyncPlayer(videos, { onState: stateChanged, onError: message, onEnded: handlePlaybackEnded });
+  engine = new SyncPlayer(videos, { onState: stateChanged, onError: handleEngineError, onEnded: handlePlaybackEnded });
   const offset = previousOffset ?? recordingOffset(pair[0].url, pair[1].url);
   $("offset").value = offset;
   engine.setOffset(offset);
@@ -473,6 +562,8 @@ async function switchLesson(targetLiveId, { autoplay = true } = {}) {
     if (!result?.ok) throw new Error(result?.error || "切换课次失败，请重试。");
     if (!Array.isArray(result.media) || result.media.length < 2) throw new Error("该课次缺少双路视频源，无法同步播放。");
     currentLiveId = result.currentLiveId || targetLiveId;
+    autoRefreshFailedFor = "";
+    lastAutoRefreshSuccessAt = 0;
     initialResumeApplied = true;
     populateSources(result.media, { keepSelection: false });
     const resumeAt = resumeTimeFor(progressMap[currentLiveId]);
@@ -537,6 +628,7 @@ async function loadPlaylist({ showErrors = false } = {}) {
 
 async function load({ refresh = false } = {}) {
   $("refresh").disabled = true;
+  if (refresh) autoRefreshFailedFor = "";
   try {
     const result = await chrome.runtime.sendMessage({ type: "GET_PLAYER", id, refresh });
     if (!result?.ok) throw new Error(result?.error || "无法读取课程，请从扩展面板重新打开同步播放。");

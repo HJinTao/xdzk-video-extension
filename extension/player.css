@@ -39,9 +39,21 @@ main :where(button, select):hover:enabled, summary:hover {
 #toggle-captions[aria-pressed="true"] { background: var(--tint); border-color: var(--accent); color: var(--accent); }
 
 #message {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px;
   margin-bottom: 12px; padding: 9px 13px; border: 1px solid var(--line); border-radius: var(--radius-md);
   background: var(--tint); color: var(--ink); font-size: 13px;
 }
+.message-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.message-link, .message-retry {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-height: 28px; padding: 3px 10px; border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 600; text-decoration: none;
+  border: 1px solid var(--accent); background: var(--paper); color: var(--accent);
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.message-link { background: var(--action); border-color: var(--action); color: white; }
+.message-link:hover { background: var(--action-hover); border-color: var(--action-hover); }
+.message-retry:hover:enabled { background: var(--wash); border-color: var(--accent); }
 
 .study-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .study-layout.review-open, .study-layout.panel-open { grid-template-columns: minmax(0, 1fr) clamp(310px, 27%, 388px); }

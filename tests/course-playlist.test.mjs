@@ -202,3 +202,51 @@ test("controller falls back to authenticated fetch when the source replay tab is
   assert.equal(switched.currentLiveId, "105");
   assert.equal(switched.media.length, 2);
 });
+
+test("auto-refresh re-signs expired URLs via playVideo2Keda, keeps labels and tags failure reasons", async () => {
+  const { api, createdTabs } = createApi({
+    url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100"
+  });
+  const freshA = mediaUrl("CloudIPC-demo-a", 1700009999);
+  const freshB = mediaUrl("CloudIPC-demo-b", 1700009999);
+  let htmlMode = "ok";
+  api.scripting.executeScript = async ({ func }) => {
+    if (func.name === "fetchLessonPageInPage") {
+      if (htmlMode === "ok") {
+        const encoded = encodeURIComponent(JSON.stringify({ videoPath: { pptVideo: freshA, teacherTrack: freshB } }));
+        return [{ result: { ok: true, html: `<script>var infostr = "${encoded}";</script>` } }];
+      }
+      if (htmlMode === "login") return [{ result: { ok: true, html: "请先登录" } }];
+      if (htmlMode === "network") return [{ result: { ok: false, reason: "network", error: "网络连接失败" } }];
+    }
+    return [];
+  };
+
+  const controller = createController(api);
+  await controller.dispatch({
+    type: "PAGE_SNAPSHOT",
+    snapshot: { ...snapshot, url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100" }
+  }, { ...pageSender, url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100" });
+  await controller.dispatch({ type: "RENAME_MEDIA", tabId: 1, key: mediaUrl("CloudIPC-demo-a").split("?")[0], value: "自定义课件" }, popupSender);
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  const playerId = new URL(createdTabs[0].url).searchParams.get("id");
+  const playerSender = { id: "test-extension", url: createdTabs[0].url };
+
+  // Source tab still holds the old 1700000000 URL; auto refresh fetches fresh 1700009999 directly.
+  const refreshed = await controller.dispatch({ type: "GET_PLAYER", id: playerId, refresh: true, auto: true }, playerSender);
+  assert.equal(refreshed.ok, true);
+  assert.match(refreshed.media[0].url, /1700009999/);
+  assert.equal(refreshed.media[0].label, "自定义课件");
+
+  htmlMode = "login";
+  await assert.rejects(
+    controller.dispatch({ type: "GET_PLAYER", id: playerId, refresh: true, auto: true }, playerSender),
+    (err) => err.reason === "login"
+  );
+
+  htmlMode = "network";
+  await assert.rejects(
+    controller.dispatch({ type: "GET_PLAYER", id: playerId, refresh: true, auto: true }, playerSender),
+    (err) => err.reason === "network"
+  );
+});

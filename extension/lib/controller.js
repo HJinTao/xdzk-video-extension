@@ -1,4 +1,4 @@
-import { downloadFilename, isCourseSubtitleUrl, isMediaUrl, isPlatformUrl, responseSize, sanitizeName } from "./media.js";
+import { downloadFilename, isCourseSubtitleUrl, isMediaUrl, isPlatformUrl, responseSize, sanitizeName, signatureTime } from "./media.js";
 import { applySnapshot, emptyState, sortedMedia, upsertMedia } from "./state.js";
 import { readCourseSubtitles } from "./course-subtitles.js";
 import {
@@ -16,6 +16,11 @@ import { createProgressStore } from "./watch-progress.js";
 
 const storageKey = (tabId) => `tab:${tabId}`;
 const supportedUrl = (url) => isPlatformUrl(url) || isMediaUrl(url);
+function createTaggedError(message, reason = "") {
+  const error = new Error(message);
+  if (reason) error.reason = reason;
+  return error;
+}
 
 export function createController(api, { fetch: fetchImpl = globalThis.fetch } = {}) {
   const queues = new Map();
@@ -218,10 +223,10 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       try {
         return await fallbackTask(sourceOrigin, fetchImpl);
       } catch {
-        return { ok: false, error: "请求西电智课失败，请确认已登录后重试。" };
+        return { ok: false, reason: "network", error: "网络连接失败或学校服务暂时不可用，请检查网络后重试。" };
       }
     }
-    return { ok: false, error: "原回放页面已关闭，请重新打开西电智课回放页。" };
+    return { ok: false, reason: "missing", error: "原回放页面已关闭，请重新打开西电智课回放页。" };
   }
 
   async function fetchPlaylist(tabId, sourceOrigin, liveId) {
@@ -248,7 +253,10 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       const response = await doFetch(`${origin}/xidianpj/frontLive/playVideo2Keda?liveId=${encodeURIComponent(liveId)}`, {
         credentials: "include"
       });
-      if (!response.ok) return { ok: false, error: `课次视频请求失败（HTTP ${response.status}）。` };
+      if (response.status === 401 || response.status === 403) {
+        return { ok: false, reason: "login", error: "西电智课登录已过期，请重新登录后更新视频源。" };
+      }
+      if (!response.ok) return { ok: false, reason: "network", error: `学校服务暂时不可用（HTTP ${response.status}），请检查网络后重试。` };
       return { ok: true, html: await response.text() };
     });
   }
@@ -325,13 +333,13 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
 
   async function loadLesson(id, liveId) {
     const targetId = String(liveId || "");
-    if (!/^\d{1,20}$/.test(targetId)) throw new Error("课次编号无效。");
+    if (!/^\d{1,20}$/.test(targetId)) throw createTaggedError("课次编号无效。", "invalid");
     const payload = await readPlayer(id);
     const raw = await fetchLessonHtml(payload.sourceTabId, payload.sourceOrigin, targetId);
-    if (!raw?.ok) throw new Error(raw?.error || "加载课次视频失败，请重试。");
+    if (!raw?.ok) throw createTaggedError(raw?.error || "加载课次视频失败，请重试。", raw?.reason || "network");
     const parsed = parsePlayVideoHtml(raw.html, targetId);
-    if (!parsed.ok) throw new Error(parsed.error);
-    if (parsed.media.length < 2) throw new Error("该课次仅识别到 1 路画面，暂不支持双路同步播放。");
+    if (!parsed.ok) throw createTaggedError(parsed.error, parsed.reason);
+    if (parsed.media.length < 2) throw createTaggedError("该课次仅识别到 1 路画面，暂不支持双路同步播放。", "missing");
     const lesson = payload.lessons?.find((item) => item.liveId === targetId);
     const lessonTitle = lesson?.title || "";
     const updated = {
@@ -350,25 +358,63 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
     };
   }
 
-  async function playerData(id, refresh) {
+  function maxSignature(items = []) {
+    return items.reduce((max, item) => Math.max(max, signatureTime(item?.url)), 0);
+  }
+
+  async function playerData(id, refresh, auto = false) {
     let payload = await readPlayer(id);
     let notice = "";
     if (refresh) {
       const currentLiveId = payload.currentLiveId || payload.liveId || "";
-      if (currentLiveId && currentLiveId !== payload.liveId) {
-        return { ...(await loadLesson(id, currentLiveId)), notice: "" };
-      }
-      const latest = await view(payload.sourceTabId);
-      if (latest.supported && latest.media.length >= 2) {
-        payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media, liveId: latest.liveId || payload.liveId, currentLiveId: latest.liveId || payload.currentLiveId, sourceOrigin: latest.sourceOrigin || payload.sourceOrigin };
+      const previousSig = maxSignature(payload.media);
+      const latest = currentLiveId && currentLiveId !== payload.liveId ? null : await view(payload.sourceTabId);
+      const latestHasFresher = !!(latest?.supported && latest.media.length >= 2 && maxSignature(latest.media) > previousSig);
+
+      if (latestHasFresher) {
+        payload = {
+          ...payload,
+          courseTitle: latest.courseTitle,
+          media: latest.media,
+          liveId: latest.liveId || payload.liveId,
+          currentLiveId: latest.liveId || payload.currentLiveId,
+          sourceOrigin: latest.sourceOrigin || payload.sourceOrigin
+        };
         await api.storage.session.set({ [`player:${id}`]: payload });
-      } else if (currentLiveId && payload.sourceOrigin) {
+      } else if (currentLiveId) {
         try {
-          return { ...(await loadLesson(id, currentLiveId)), notice: "" };
-        } catch {
-          notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+          const refreshed = await loadLesson(id, currentLiveId);
+          // Preserve custom channel labels if the camera keys match.
+          const mergedMedia = refreshed.media.map((item) => {
+            const existing = payload.media.find((old) => old.key === item.key);
+            return existing?.label ? { ...item, label: existing.label } : item;
+          });
+          payload = { ...payload, currentLiveId, lessonTitle: refreshed.lessonTitle || payload.lessonTitle || "", media: mergedMedia };
+          await api.storage.session.set({ [`player:${id}`]: payload });
+          return {
+            ok: true,
+            courseTitle: payload.courseTitle,
+            lessonTitle: payload.lessonTitle || "",
+            currentLiveId,
+            media: mergedMedia,
+            notice: ""
+          };
+        } catch (error) {
+          if (auto) throw error;
+          if (latest?.supported && latest.media.length >= 2) {
+            payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
+            await api.storage.session.set({ [`player:${id}`]: payload });
+          } else {
+            notice = error?.message || "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+          }
         }
-      } else notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+      } else if (latest?.supported && latest.media.length >= 2) {
+        payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
+        await api.storage.session.set({ [`player:${id}`]: payload });
+      } else {
+        if (auto) throw createTaggedError("原回放页已关闭，无法自动续签视频源。请重新打开原回放页面并重新识别。", "missing");
+        notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+      }
     }
     return {
       ok: true,
@@ -414,7 +460,7 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
     const tabId = message?.tabId;
     switch (message?.type) {
       case "OPEN_PLAYER": return openPlayer(tabId);
-      case "GET_PLAYER": return playerData(message.id, !!message.refresh);
+      case "GET_PLAYER": return playerData(message.id, !!message.refresh, !!message.auto);
       case "GET_PLAYLIST": return getPlaylist(message);
       case "LOAD_LESSON": return loadLesson(message.id, message.liveId);
       case "SAVE_PROGRESS": {

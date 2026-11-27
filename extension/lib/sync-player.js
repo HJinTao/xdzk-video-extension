@@ -73,8 +73,14 @@ export class SyncPlayer {
         else { this.pause(); this.emit(); }
       });
       this.listen(video, "error", () => {
+        const wasPlaying = this.wantPlaying;
         this.pause();
-        this.onError(`画面 ${index + 1} 加载失败，请刷新原回放页面、重新识别后更新视频源。`);
+        this.onError(`画面 ${index + 1} 加载失败，请刷新原回放页面、重新识别后更新视频源。`, {
+          kind: "media",
+          index,
+          wasPlaying,
+          code: video.error?.code || 0
+        });
       });
       this.listen(video, "volumechange", () => this.enforceAudio());
     });

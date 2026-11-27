@@ -215,10 +215,13 @@ export async function fetchLessonPageInPage(liveId) {
       credentials: "same-origin",
       signal: AbortSignal.timeout(12000)
     });
-    if (!response.ok) return { ok: false, error: `课次视频请求失败（HTTP ${response.status}）。` };
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, reason: "login", error: "西电智课登录已过期，请重新登录后更新视频源。" };
+    }
+    if (!response.ok) return { ok: false, reason: "network", error: `学校服务暂时不可用（HTTP ${response.status}），请检查网络后重试。` };
     return { ok: true, html: await response.text() };
   } catch {
-    return { ok: false, error: "读取课次视频失败，请检查网络或重新登录西电智课。" };
+    return { ok: false, reason: "network", error: "网络连接失败或请求超时，请检查网络后重试。" };
   }
 }
 
