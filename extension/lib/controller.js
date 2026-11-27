@@ -177,7 +177,7 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
 
   async function openPlayer(tabId) {
     const current = await view(tabId);
-    if (!current.supported || current.media.length < 2) throw new Error("至少需要两路视频，请先播放两路画面并重新识别。");
+    if (!current.supported || current.media.length < 1) throw new Error("还没有识别到视频，请先播放回放并重新识别。");
     const id = crypto.randomUUID();
     const key = `player:${id}`;
     const payload = {
@@ -339,7 +339,6 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
     if (!raw?.ok) throw createTaggedError(raw?.error || "加载课次视频失败，请重试。", raw?.reason || "network");
     const parsed = parsePlayVideoHtml(raw.html, targetId);
     if (!parsed.ok) throw createTaggedError(parsed.error, parsed.reason);
-    if (parsed.media.length < 2) throw createTaggedError("该课次仅识别到 1 路画面，暂不支持双路同步播放。", "missing");
     const lesson = payload.lessons?.find((item) => item.liveId === targetId);
     const lessonTitle = lesson?.title || "";
     const updated = {
@@ -369,7 +368,7 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       const currentLiveId = payload.currentLiveId || payload.liveId || "";
       const previousSig = maxSignature(payload.media);
       const latest = currentLiveId && currentLiveId !== payload.liveId ? null : await view(payload.sourceTabId);
-      const latestHasFresher = !!(latest?.supported && latest.media.length >= 2 && maxSignature(latest.media) > previousSig);
+      const latestHasFresher = !!(latest?.supported && latest.media.length >= 1 && (maxSignature(latest.media) > previousSig || latest.media.length > payload.media.length));
 
       if (latestHasFresher) {
         payload = {
@@ -403,19 +402,19 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
           };
         } catch (error) {
           if (auto) throw error;
-          if (latest?.supported && latest.media.length >= 2) {
+          if (latest?.supported && latest.media.length >= 1) {
             payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
             await api.storage.session.set({ [`player:${id}`]: payload });
           } else {
-            notice = error?.message || "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+            notice = error?.message || "原回放页已关闭或尚未识别到可用视频，当前保留上次的视频源。";
           }
         }
-      } else if (latest?.supported && latest.media.length >= 2) {
+      } else if (latest?.supported && latest.media.length >= 1) {
         payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
         await api.storage.session.set({ [`player:${id}`]: payload });
       } else {
         if (auto) throw createTaggedError("原回放页已关闭，无法自动续签视频源。请重新打开原回放页面并重新识别。", "missing");
-        notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+        notice = "原回放页已关闭或尚未识别到可用视频，当前保留上次的视频源。";
       }
     }
     return {

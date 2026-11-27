@@ -167,17 +167,28 @@ test("a single-camera preview can load a local subtitle into the popup document"
   } finally { dom.window.close(); }
 });
 
-test("synchronized viewing stays accessible and a single recording can be downloaded", async () => {
-  const { document, dom } = await mount({ snapshot: { ...snapshot, media: snapshot.media.slice(0, 1) } });
+test("a single recording enables single-stream playback and can still be downloaded while empty pages disable playback", async () => {
+  const { document, dom, createdTabs } = await mount({ snapshot: { ...snapshot, media: snapshot.media.slice(0, 1) } });
   try {
     await until(() => document.querySelector(".media-card") && !document.querySelector("#scan").disabled);
     const watch = document.querySelector("#open-player");
     assert.equal(watch.closest(".course-section") !== null, true);
-    assert.equal(watch.disabled, true);
+    assert.equal(watch.disabled, false);
+    assert.equal(document.querySelector("#open-player-label").textContent, "单画面看课");
+    assert.match(document.querySelector("#summary").textContent, /单画面看课/);
     assert.equal(document.querySelector("#download-selected").disabled, false);
     assert.equal(document.querySelector(".download-button").disabled, false);
     assert.doesNotMatch(document.body.textContent, /云盘/);
+    watch.click();
+    await until(() => document.querySelector("#notice").textContent.includes("单画面看课") && !document.querySelector("#scan").disabled);
+    assert.equal(createdTabs.length, 1);
   } finally { dom.window.close(); }
+
+  const empty = await mount({ snapshot: { ...snapshot, media: [] } });
+  try {
+    await until(() => !empty.document.querySelector("#empty").hidden && !empty.document.querySelector("#scan").disabled);
+    assert.equal(empty.document.querySelector("#open-player").disabled, true);
+  } finally { empty.dom.window.close(); }
 });
 
 test("the checklist totals known and unknown sizes, keeps the user's subset and downloads only checked files", async (t) => {

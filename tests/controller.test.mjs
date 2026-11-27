@@ -134,11 +134,16 @@ test("opens an independent player without putting signed URLs into browsing hist
   await assert.rejects(controller.dispatch({ type: "GET_PLAYER", id }, popupSender), /记录已清除/);
 });
 
-test("a single video cannot open dual playback and player IDs are validated", async () => {
-  const { api } = createApi();
+test("an empty tab cannot open the player, a single video can open single-stream playback, and player IDs are validated", async () => {
+  const { api, createdTabs } = createApi();
   const controller = createController(api);
+  await assert.rejects(controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender), /还没有识别到视频/);
   await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot: { ...snapshot, media: snapshot.media.slice(0, 1) } }, pageSender);
-  await assert.rejects(controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender), /至少需要两路/);
+  const opened = await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  assert.equal(opened.ok, true);
+  const id = new URL(createdTabs[0].url).searchParams.get("id");
+  const data = await controller.dispatch({ type: "GET_PLAYER", id }, popupSender);
+  assert.equal(data.media.length, 1);
   await assert.rejects(controller.dispatch({ type: "GET_PLAYER", id: "tab:1" }, popupSender), /地址无效/);
 });
 

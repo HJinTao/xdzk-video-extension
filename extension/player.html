@@ -77,7 +77,7 @@
             <fieldset class="audio-group"><legend>声音</legend>
               <div class="segmented-radios">
                 <label><input type="radio" name="audio" value="0" checked><span id="audio-name-0">画面 1</span></label>
-                <label><input type="radio" name="audio" value="1"><span id="audio-name-1">画面 2</span></label>
+                <label id="audio-option-1"><input type="radio" name="audio" value="1"><span id="audio-name-1">画面 2</span></label>
                 <label><input type="radio" name="audio" value="-1"><span>静音</span></label>
               </div>
             </fieldset>
@@ -94,8 +94,8 @@
             <summary>视频源与时间校准</summary>
             <div class="settings-grid">
               <label>画面 1 视频源<select id="source-0"></select></label>
-              <label>画面 2 视频源<select id="source-1"></select></label>
-              <label>画面 2 时间偏移（秒）<input id="offset" type="number" value="0" step="0.1" min="-86400" max="86400" aria-describedby="offset-help"></label>
+              <label id="source-1-wrap">画面 2 视频源<select id="source-1"></select></label>
+              <label id="offset-wrap">画面 2 时间偏移（秒）<input id="offset" type="number" value="0" step="0.1" min="-86400" max="86400" aria-describedby="offset-help"></label>
               <button id="reset-offset" type="button">重置偏移</button>
               <button id="refresh" type="button">更新视频源</button>
             </div>

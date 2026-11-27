@@ -309,3 +309,30 @@ test("player-prefs normalizes, layers global/course preferences, matches camera 
   assert.equal(loaded.prefs.rate, 1.75);
   assert.equal(loaded.prefs.volume, 0.8);
 });
+
+test("controller switches into a single-camera lesson without failing continuous playback", async () => {
+  const { api, createdTabs } = createApi({
+    url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100"
+  });
+  const pptOnly = mediaUrl("CloudIPC-103-ppt", 1700000800);
+  const encodedSingle = encodeURIComponent(JSON.stringify({ videoPath: { pptVideo: pptOnly, teacherTrack: "" } }));
+  api.scripting.executeScript = async ({ func }) => {
+    if (func.name === "fetchLessonPageInPage") {
+      return [{ result: { ok: true, html: `<script>var infostr = "${encodedSingle}";</script>` } }];
+    }
+    return [];
+  };
+  const controller = createController(api);
+  await controller.dispatch({
+    type: "PAGE_SNAPSHOT",
+    snapshot: { ...snapshot, url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100" }
+  }, { ...pageSender, url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100" });
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  const playerId = new URL(createdTabs[0].url).searchParams.get("id");
+  const playerSender = { id: "test-extension", url: createdTabs[0].url };
+
+  const switched = await controller.dispatch({ type: "LOAD_LESSON", id: playerId, liveId: "103" }, playerSender);
+  assert.equal(switched.ok, true);
+  assert.equal(switched.media.length, 1);
+  assert.equal(switched.media[0].label, "课件");
+});

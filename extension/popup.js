@@ -96,7 +96,7 @@ async function act(operation) {
     busy = false;
     $("scan").disabled = false;
     updateSelection();
-    $("open-player").disabled = (state?.media?.length || 0) < 2;
+    $("open-player").disabled = (state?.media?.length || 0) < 1;
   }
 }
 
@@ -210,11 +210,13 @@ function render(next) {
   if (!titleDirty && document.activeElement !== $("course-name")) $("course-name").value = next.courseTitle;
   $("course-name").title = next.courseTitle;
   $("save-as").checked = !!next.options.saveAs;
-  const summary = next.media.length === 1 ? "已识别 1 路，同步看课需 2 路" :
+  const summary = next.media.length === 1 ? "已识别 1 路（单画面看课；若有双路请先分别播放）" :
     next.media.length ? `已识别 ${next.media.length} 路画面` : "等待回放视频加载";
   if ($("summary").textContent !== summary) $("summary").textContent = summary;
   $("empty").hidden = next.media.length > 0;
-  $("open-player").disabled = busy || next.media.length < 2;
+  $("open-player").disabled = busy || next.media.length < 1;
+  const openLabel = $("open-player-label");
+  if (openLabel) openLabel.textContent = next.media.length === 1 ? "单画面看课" : "同步看课";
   void refreshPlaylistChip(next.liveId || "");
   const keys = new Set(next.media.map((media) => media.key));
   for (const [key, card] of cards) if (!keys.has(key)) { card.subtitles.setSource(""); card.player?.destroy(); card.remove(); cards.delete(key); }
@@ -278,7 +280,7 @@ $("open-player").addEventListener("click", () => { void act(async () => {
   await persistTitle();
   await Promise.all([...cards.values()].map((card) => card.pendingName));
   await send("OPEN_PLAYER");
-  notice("已在新标签页打开双路同步播放，无需先下载视频。");
+  notice((state?.media?.length || 0) === 1 ? "已在新标签页打开单画面看课，无需先下载视频。" : "已在新标签页打开双路同步播放，无需先下载视频。");
 }); });
 
 async function refreshState() {
