@@ -292,3 +292,21 @@ test("the shorter recording ends the pair and a rejected play leaves both paused
     assert.equal(errors.length, 1);
   } finally { engine.destroy(); }
 });
+
+test("switching audio promotes the audible video to leader so drift correction only nudges the muted peer", async (t) => {
+  const { videos, engine } = setup();
+  t.after(() => engine.destroy());
+  await engine.play(); await flush();
+  videos[0].position = 20; videos[1].position = 20.2;
+  engine.tick(); await flush();
+  assert.equal(videos[1].playbackRate, .96);
+
+  engine.setAudio(1); await flush();
+  assert.equal(engine.leader, 1);
+  assert.equal(videos[1].playbackRate, 1);
+
+  videos[0].position = 25; videos[1].position = 25.2;
+  engine.tick(); await flush();
+  assert.equal(videos[1].playbackRate, 1);
+  assert.equal(videos[0].playbackRate, 1.04);
+});

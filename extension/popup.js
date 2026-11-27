@@ -2,6 +2,7 @@ import { formatBytes, formatDuration, recordingInfo } from "./lib/media.js";
 import { bindSubtitles } from "./lib/subtitles.js";
 import { createLecturePlayer } from "./lib/lecture-player.js";
 import { bindPlaybackSpeed } from "./lib/playback-speed.js";
+import { computeWatchStatus } from "./lib/watch-progress.js";
 
 const $ = (id) => document.getElementById(id);
 const cards = new Map();
@@ -35,10 +36,7 @@ async function refreshPlaylistChip(liveId) {
     }
     const available = result.lessons.filter((lesson) => lesson.available);
     const progress = result.progress || {};
-    const watched = available.filter((lesson) => {
-      const record = progress[lesson.liveId];
-      return record?.status === "watched" || Number(record?.ratio) >= 0.9;
-    }).length;
+    const watched = available.filter((lesson) => computeWatchStatus(progress[lesson.liveId]) === "watched").length;
     chip.textContent = `同课程 ${available.length} 节 · 已看 ${watched} 节`;
     chip.hidden = false;
   } catch {
@@ -207,6 +205,7 @@ function render(next) {
   state = next;
   $("workspace").hidden = !next.supported;
   $("unsupported").hidden = next.supported;
+  syncPolling();
   if (!next.supported) return;
   if (!titleDirty && document.activeElement !== $("course-name")) $("course-name").value = next.courseTitle;
   $("course-name").title = next.courseTitle;
@@ -282,18 +281,40 @@ $("open-player").addEventListener("click", () => { void act(async () => {
   notice("已在新标签页打开双路同步播放，无需先下载视频。");
 }); });
 
+async function refreshState() {
+  if (busy || pollInFlight || !state?.supported) return;
+  pollInFlight = true;
+  try { render(await send("GET_STATE")); } catch { /* Keep the last useful state during navigation. */ }
+  finally { pollInFlight = false; }
+}
+
+const hasStorageEvents = typeof chrome.storage?.onChanged?.addListener === "function";
+
+function syncPolling() {
+  const activeDownload = !!state?.media?.some((item) => item.download?.state === "in_progress");
+  const needPoll = !!state?.supported && (activeDownload || !hasStorageEvents);
+  if (needPoll && !poll) poll = setInterval(() => { void refreshState(); }, 1200);
+  else if (!needPoll && poll) { clearInterval(poll); poll = null; }
+}
+
+function handleStorageChange(changes, area) {
+  if (area === "session" && Number.isInteger(tabId) && Object.prototype.hasOwnProperty.call(changes, `tab:${tabId}`)) {
+    void refreshState();
+  }
+}
+
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab?.id;
+  if (hasStorageEvents) chrome.storage.onChanged.addListener(handleStorageChange);
   render(await send("GET_STATE"));
   if (state.supported) await act(scanPage);
-  poll = setInterval(async () => {
-    if (busy || pollInFlight) return;
-    pollInFlight = true;
-    try { render(await send("GET_STATE")); } catch { /* Keep the last useful state during navigation. */ }
-    finally { pollInFlight = false; }
-  }, 1200);
+  syncPolling();
 }
 
-window.addEventListener("pagehide", () => { clearInterval(poll); for (const card of cards.values()) card.player?.destroy(); });
+window.addEventListener("pagehide", () => {
+  if (poll) { clearInterval(poll); poll = null; }
+  if (hasStorageEvents) chrome.storage.onChanged.removeListener(handleStorageChange);
+  for (const card of cards.values()) card.player?.destroy();
+});
 init().catch((error) => notice(error.message, true));

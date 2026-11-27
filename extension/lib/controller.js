@@ -447,7 +447,16 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       const [injection] = await api.scripting.executeScript({ target, func: readCourseSubtitles, args: [item.key, item.frameUrl || "", observedUrl || ""] });
       result = injection?.result;
     } catch { /* The source tab or iframe may have closed. */ }
-    if (!result || result.stale) throw new Error("请打开对应课次的原回放页，重新识别后读取课程字幕，或导入本地字幕。");
+    if (!result || result.stale) {
+      const fallbackLiveId = source.currentLiveId || source.liveId || "";
+      if (message.id !== undefined && fallbackLiveId && source.sourceOrigin) {
+        const fetched = await fetchLessonSubtitles(tabId, source.sourceOrigin, fallbackLiveId);
+        if (fetched?.text) return { ok: true, text: fetched.text };
+        if (fetched?.failed) throw new Error("读取课程字幕失败，请确认原回放页已登录后重试，或导入本地字幕。");
+        throw new Error("这个画面没有可用的课程字幕，可以导入 SRT 或 VTT 文件。");
+      }
+      throw new Error("请打开对应课次的原回放页，重新识别后读取课程字幕，或导入本地字幕。");
+    }
     if (result.text || result.cues?.length) return { ok: true, ...result };
     if (result.failed) throw new Error("读取课程字幕失败，请确认原回放页已登录后重试，或导入本地字幕。");
     throw new Error("这个画面没有可用的课程字幕，可以导入 SRT 或 VTT 文件。");
@@ -523,15 +532,17 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       if (subtitle) {
         const lesson = frame?.url && new URL(frame.url).searchParams.get("workDetailId");
         if (lesson && new URL(details.url).searchParams.get("workDetailId") !== lesson) return;
-        state.frames[details.frameId] = { ...frame, documentId: details.documentId || frame?.documentId, subtitleUrl: details.url };
+        const nextDocumentId = details.documentId || frame?.documentId;
+        if (frame?.subtitleUrl === details.url && frame?.documentId === nextDocumentId) return;
+        state.frames[details.frameId] = { ...frame, documentId: nextDocumentId, subtitleUrl: details.url };
         await save(state);
         return;
       }
-      upsertMedia(state, {
+      const changed = upsertMedia(state, {
         url: details.url, frameId: details.frameId ?? 0, documentId: details.documentId,
         frameUrl: frame?.url, size: responseSize(details.responseHeaders), source: "network"
       }, details.timeStamp || Date.now());
-      await save(state);
+      if (changed) await save(state);
     });
   }
 

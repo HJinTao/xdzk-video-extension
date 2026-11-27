@@ -37,8 +37,8 @@ async function page({ labels = ["画面 1", "画面 2"], captionResult = () => (
   dom.window.HTMLMediaElement.prototype.play = () => Promise.resolve();
   const videos = [...dom.window.document.querySelectorAll("video")];
   videos.forEach((video) => {
-    Object.defineProperty(video, "duration", { get: () => 120 });
-    Object.defineProperty(video, "readyState", { get: () => 4 });
+    Object.defineProperty(video, "duration", { configurable: true, get: () => 120 });
+    Object.defineProperty(video, "readyState", { configurable: true, get: () => 4 });
   });
   prepareMedia?.(dom.window);
   dom.window.eval(code);
@@ -457,4 +457,92 @@ test("expired video source auto-refreshes once, restores playback, and routes fa
   await flush();
   assert.equal(netFixture.document.querySelector("#message .message-link"), null);
   assert.ok(netFixture.document.querySelector("#message .message-retry"));
+});
+
+test("initial resume and lesson switch autoplay wait until both videos finish loading metadata", async (t) => {
+  const lessons = [
+    { liveId: "101", index: 1, title: "第 1 讲", shortDate: "09-07", timeRange: "08:30–10:05", available: true },
+    { liveId: "102", index: 2, title: "第 2 讲", shortDate: "09-09", timeRange: "08:30–10:05", available: true }
+  ];
+  const progress = {
+    "101": { liveId: "101", courseKey: "code:CS101", time: 45, duration: 120, ratio: 0.375, status: "watching", manual: false },
+    "102": { liveId: "102", courseKey: "code:CS101", time: 30, duration: 120, ratio: 0.25, status: "watching", manual: false }
+  };
+  let videoStates;
+  const { dom, document, videos } = await page({
+    playlistResult: { ok: true, supported: true, courseKey: "code:CS101", courseTitle: "数据库系统", currentLiveId: "101", lessons, progress, prefs: { autoPlayNext: true } },
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        return {
+          ok: true, courseTitle: "数据库系统", currentLiveId: "101",
+          media: [
+            { key: mediaKey(mediaUrl("CloudIPC-101-a")), label: "课件", url: mediaUrl("CloudIPC-101-a") },
+            { key: mediaKey(mediaUrl("CloudIPC-101-b")), label: "教室", url: mediaUrl("CloudIPC-101-b") }
+          ]
+        };
+      }
+      if (message.type === "LOAD_LESSON") {
+        return {
+          ok: true, courseTitle: "数据库系统", lessonTitle: "第 2 讲", currentLiveId: message.liveId,
+          media: [
+            { key: mediaKey(mediaUrl(`CloudIPC-${message.liveId}-a`)), label: "课件", url: mediaUrl(`CloudIPC-${message.liveId}-a`) },
+            { key: mediaKey(mediaUrl(`CloudIPC-${message.liveId}-b`)), label: "教室", url: mediaUrl(`CloudIPC-${message.liveId}-b`) }
+          ]
+        };
+      }
+    },
+    prepareMedia(win) {
+      videoStates = new WeakMap();
+      const stateOf = (el) => {
+        if (!videoStates.has(el)) videoStates.set(el, { duration: NaN, readyState: 0, paused: true });
+        return videoStates.get(el);
+      };
+      win.HTMLMediaElement.prototype.load = function() {
+        const st = stateOf(this);
+        st.duration = NaN;
+        st.readyState = 0;
+        st.paused = true;
+        this.currentTime = 0;
+      };
+      win.HTMLMediaElement.prototype.play = function() { stateOf(this).paused = false; return Promise.resolve(); };
+      win.HTMLMediaElement.prototype.pause = function() { stateOf(this).paused = true; };
+      for (const video of win.document.querySelectorAll("video")) {
+        Object.defineProperty(video, "duration", { configurable: true, get() { return stateOf(this).duration; } });
+        Object.defineProperty(video, "readyState", { configurable: true, get() { return stateOf(this).readyState; } });
+        Object.defineProperty(video, "paused", { configurable: true, get() { return stateOf(this).paused; } });
+      }
+    }
+  });
+  t.after(() => close(dom));
+
+  const readyVideo = (video, duration = 120) => {
+    const st = videoStates.get(video);
+    st.duration = duration;
+    st.readyState = 4;
+    video.dispatchEvent(new dom.window.Event("loadedmetadata"));
+  };
+
+  // Playlist arrived before either video loaded metadata; only video 0 ready should still wait.
+  readyVideo(videos[0]);
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [0, 0]);
+
+  // Once video 1 metadata arrives, initial resume seeks both videos cleanly.
+  readyVideo(videos[1]);
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [45, 45]);
+  assert.match(document.querySelector("#message").textContent, /已定位到上次观看位置/);
+
+  // Switching to lesson 102 with staggered metadata waits for both videos, then seeks to 30s and plays without error.
+  document.querySelector("#next-lesson").click();
+  await flush();
+  readyVideo(videos[0]);
+  await flush();
+  assert.equal(videos[0].paused, true);
+  assert.doesNotMatch(document.querySelector("#message").textContent, /等待两路视频就绪/);
+
+  readyVideo(videos[1]);
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [30, 30]);
+  assert.ok(videos.every((v) => !v.paused));
 });

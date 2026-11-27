@@ -42,6 +42,7 @@ let countdownTimer = null;
 let countdownTarget = null;
 let countdownLeft = 0;
 let initialResumeApplied = false;
+let pendingStart = null;
 const players = [];
 const speedControl = bindPlaybackSpeed($("speed-control"), (value) => { savedRate = value; engine?.setRate(value); });
 const transcript = bindTranscript($("review"), (seconds) => {
@@ -385,6 +386,23 @@ function handlePlaybackEnded() {
   if (autoPlayNext && next) startNextCountdown(next);
 }
 
+function applyPendingStart(start) {
+  if (!start || engine !== start.generation) return;
+  const range = engine.range();
+  if (!range) return;
+  if (start.fromResume) {
+    if (initialResumeApplied || engine.wantPlaying || engine.time() >= 2) return;
+    const resumeAt = resumeTimeFor(start.record, range.end - range.start);
+    if (resumeAt <= 0) return;
+    initialResumeApplied = true;
+    engine.seek(range.start + resumeAt);
+    message(`已定位到上次观看位置 ${formatClock(resumeAt)}，点击“播放”继续。`);
+    return;
+  }
+  if (start.time > 0) engine.seek(start.relativeToRange ? range.start + start.time : start.time);
+  if (start.autoplay) void engine.play();
+}
+
 function stateChanged(state) {
   const ready = !!state.range;
   for (const name of ["play", "back", "forward", "timeline"]) $(name).disabled = !ready;
@@ -414,6 +432,11 @@ function stateChanged(state) {
   $("current").textContent = formatClock(editingTimeline ? Number($("timeline").value) : state.time);
   speedControl.set(state.rate);
   savedRate = state.rate;
+  if (ready && pendingStart) {
+    const start = pendingStart;
+    pendingStart = null;
+    applyPendingStart(start);
+  }
 }
 
 function refreshFailureActions(reason) {
@@ -476,11 +499,12 @@ function handleEngineError(errorText, detail) {
   message(errorText);
 }
 
-function loadPair({ preserve = false, resumeAt = 0, autoplay = false } = {}) {
+function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, autoplay = false } = {}) {
   const time = preserve ? (resumeAt || engine?.time() || 0) : resumeAt;
   const previousOffset = preserve ? engine?.offset : undefined;
   const rate = engine?.rate || savedRate;
   cancelCountdown();
+  pendingStart = null;
   wasPlaying = false;
   lastSavedTime = -1;
   engine?.destroy();
@@ -524,14 +548,9 @@ function loadPair({ preserve = false, resumeAt = 0, autoplay = false } = {}) {
   subtitles.forEach(control => control.ensureCourse());
   selectReview(openedReview ? reviewIndex : primary);
   if (time > 0 || autoplay) {
-    const generation = engine;
-    const applyStart = () => {
-      if (engine !== generation) return;
-      if (time > 0) engine.seek(time);
-      if (autoplay) void engine.play();
-    };
-    if (engine.range()) applyStart();
-    else videos[0].addEventListener("loadedmetadata", applyStart, { once: true });
+    const start = { generation: engine, time, relativeToRange, autoplay };
+    if (engine.range()) applyPendingStart(start);
+    else pendingStart = start;
   }
 }
 
@@ -567,7 +586,7 @@ async function switchLesson(targetLiveId, { autoplay = true } = {}) {
     initialResumeApplied = true;
     populateSources(result.media, { keepSelection: false });
     const resumeAt = resumeTimeFor(progressMap[currentLiveId]);
-    loadPair({ preserve: false, resumeAt, autoplay });
+    loadPair({ preserve: false, resumeAt, relativeToRange: true, autoplay });
     updateLessonHeading(result.lessonTitle || "");
     if (resumeAt > 0) message(`已恢复到上次观看位置 ${formatClock(resumeAt)}`);
   } catch (error) {
@@ -609,11 +628,12 @@ async function loadPlaylist({ showErrors = false } = {}) {
     }
     renderPlaylist();
     if (!initialResumeApplied && currentLiveId && engine && !engine.wantPlaying && engine.time() < 2) {
-      const resumeAt = resumeTimeFor(progressMap[currentLiveId], engine.range()?.end || 0);
-      if (resumeAt > 0) {
-        initialResumeApplied = true;
-        engine.seek(resumeAt);
-        message(`已定位到上次观看位置 ${formatClock(resumeAt)}，点击“播放”继续。`);
+      const record = progressMap[currentLiveId];
+      const range = engine.range();
+      if (resumeTimeFor(record, range ? range.end - range.start : 0) > 0) {
+        const start = { generation: engine, fromResume: true, record };
+        if (range) applyPendingStart(start);
+        else if (!pendingStart) pendingStart = start;
       }
     }
   } catch (error) {
