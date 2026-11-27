@@ -8,19 +8,31 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
-.speed-control { min-width: 0; color: var(--ink); font-size: 14px; }
-.speed-control summary { cursor: pointer; padding: 5px 3px; color: var(--accent); font-size: 13px; }
+.speed-control { min-width: 0; color: var(--ink); font-size: 13px; }
+.speed-control label { color: var(--muted); }
+.speed-control summary {
+  cursor: pointer; padding: 4px 6px; color: var(--accent); font-size: 12px;
+  border-radius: var(--radius-sm); transition: background-color 160ms var(--ease-out);
+}
+.speed-control summary:hover { background: var(--tint); }
 .speed-control select, .speed-control input, .speed-control button {
-  color: inherit;
+  color: var(--ink);
   background: var(--paper);
-  border: 1px solid var(--strong-line);
-  border-radius: 6px;
-  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  min-height: 30px;
+  padding: 3px 8px;
   font: inherit;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out);
+}
+.speed-control :is(select, input, button):hover:not(:disabled) {
+  border-color: var(--strong-line);
+  background: var(--tint);
 }
 .speed-control input { width: 5.2em; }
 .speed-control button { cursor: pointer; }
-.rate-values { padding: 4px; }
-.preview .speed-control { padding: 0 0 8px; font-size: 13px; }
+.rate-values { padding: 4px 0; }
+.preview .speed-control { padding: 0 0 8px; font-size: 12px; }

@@ -161,11 +161,14 @@ function updateLessonNav() {
   $("prev-lesson").hidden = !hasPlaylist;
   $("next-lesson").hidden = !hasPlaylist;
   $("auto-next-wrap").hidden = !hasPlaylist;
+  document.querySelectorAll(".side-tab-playlist").forEach((button) => { button.hidden = !hasPlaylist; });
   if (!hasPlaylist) return;
   const available = lessons.filter((item) => item.available);
   const watchedCount = available.filter((item) => computeWatchStatus(progressMap[item.liveId]) === "watched").length;
   $("playlist-badge").textContent = `${watchedCount}/${available.length}`;
   $("playlist-summary").textContent = `已看 ${watchedCount} / ${available.length} 节`;
+  const overallFill = $("playlist-overall-fill");
+  if (overallFill) overallFill.style.width = `${available.length ? Math.round((watchedCount / available.length) * 100) : 0}%`;
   $("prev-lesson").disabled = switchingLesson || !adjacentLesson(-1);
   $("next-lesson").disabled = switchingLesson || !adjacentLesson(1);
 }
@@ -265,7 +268,9 @@ function renderPlaylist() {
       const isWatched = meta.status === "watched";
       markBtn.setAttribute("aria-pressed", String(isWatched));
       markBtn.title = isWatched ? "标记为未看" : "标记为已看";
-      markBtn.textContent = isWatched ? "✓" : "○";
+      markBtn.innerHTML = isWatched
+        ? '<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.3 2.3 4.8-5"/></svg>'
+        : '<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>';
       markBtn.setAttribute("aria-label", `${lesson.title}${isWatched ? "，标记为未看" : "，标记为已看"}`);
       markBtn.addEventListener("click", () => { void toggleLessonWatched(lesson.liveId); });
       li.append(markBtn);
@@ -356,7 +361,9 @@ function stateChanged(state) {
   for (const name of ["play", "back", "forward", "timeline"]) $(name).disabled = !ready;
   $("play").textContent = state.playing ? "暂停" : "播放";
   const status = state.buffering ? "缓冲中，等待两路画面" : !ready ? "等待两路视频就绪或时间重叠" : state.playing ? "两路同步播放中" : "两路已同步";
-  if ($("sync-status").textContent !== status) $("sync-status").textContent = status;
+  const statusEl = $("sync-status");
+  if (statusEl.textContent !== status) statusEl.textContent = status;
+  statusEl.dataset.state = state.buffering ? "buffering" : !ready ? "idle" : state.playing ? "playing" : "ready";
   if (Number.isFinite(state.offset) && captionOffset !== state.offset) {
     captionOffset = state.offset;
     refreshCaptions();
@@ -572,6 +579,8 @@ $("refresh").addEventListener("click", () => { void load({ refresh: true }); });
 $("swap-views").addEventListener("click", () => setPrimary(1 - primary));
 $("toggle-playlist").addEventListener("click", () => showPlaylist($("playlist-panel").hidden));
 $("close-playlist").addEventListener("click", () => showPlaylist(false));
+document.querySelectorAll(".side-tab-review").forEach((button) => button.addEventListener("click", () => showReview(true)));
+document.querySelectorAll(".side-tab-playlist").forEach((button) => button.addEventListener("click", () => showPlaylist(true)));
 $("refresh-playlist").addEventListener("click", () => { void loadPlaylist({ showErrors: true }); });
 $("playlist-filter").addEventListener("change", () => { playlistFilter = $("playlist-filter").value; renderPlaylist(); });
 $("playlist-locate").addEventListener("click", () => {

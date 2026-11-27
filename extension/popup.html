@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>西电智课录播下载</title>
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
@@ -13,14 +13,14 @@
 <body>
   <main class="app">
     <header class="header">
-      <img src="icons/icon32.png" width="32" height="32" alt="">
+      <img src="icons/icon32.png" width="24" height="24" alt="">
       <h1>西电智课 · 录播助手</h1>
     </header>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 
     <section id="unsupported" class="empty unsupported" hidden>
-      <span class="empty-symbol" aria-hidden="true">↗</span>
+      <span class="empty-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" class="icon"><path d="M7 17 17 7M9 7h8v8"/></svg></span>
       <h2>先打开一节课程回放</h2>
       <p>在西电智课平台登录，打开回放后再点击扩展图标。</p>
     </section>
@@ -28,20 +28,21 @@
     <div id="workspace" hidden>
       <section class="course-section">
         <div class="course-heading">
-          <label for="course-name" class="eyebrow">课程名称</label>
+          <label for="course-name" class="sr-only">课程名称</label>
           <input id="course-name" class="course-name" type="text" maxlength="60" autocomplete="off" title="修改课程保存名称" value="课程录播">
         </div>
         <p id="summary" class="course-meta" role="status">正在识别当前页面…</p>
+        <p id="playlist-progress" class="playlist-progress" hidden></p>
         <button id="open-player" class="button sync-open" disabled><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>同步看课</button>
       </section>
 
       <div class="toolbar">
         <h2 id="files-heading">下载清单</h2>
-        <button id="scan" class="button quiet"><span aria-hidden="true">↻</span><span id="scan-label">重新识别</span></button>
+        <button id="scan" class="button quiet"><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6L20 9m0-5v5h-5"/></svg><span id="scan-label">重新识别</span></button>
       </div>
 
       <section id="empty" class="empty" hidden>
-        <span class="empty-symbol" aria-hidden="true">▷</span>
+        <span class="empty-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" class="icon"><path d="m8 5 11 7-11 7z"/></svg></span>
         <h3>等待视频出现</h3>
         <p>在回放页点击播放，再点“重新识别”。<br>双画面课程可以分别播放两路画面。</p>
       </section>
@@ -54,7 +55,7 @@
           <span id="selection-total" role="status">已选 0 个文件 · 0 B</span>
         </div>
         <button id="download-selected" class="button primary" disabled><svg viewBox="0 0 20 20" class="icon" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4"/></svg>下载所选画面</button>
-        <div class="footer-note"><label class="save-option"><input id="save-as" type="checkbox"> 每次选择保存位置</label><button id="open-downloads" class="text-button">查看下载 ↗</button></div>
+        <div class="footer-note"><label class="save-option"><input id="save-as" type="checkbox"> 每次选择保存位置</label><button id="open-downloads" class="text-button"><span>查看下载</span><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></button></div>
       </footer>
     </div>
   </main>

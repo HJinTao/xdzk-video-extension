@@ -15,6 +15,36 @@ let savingTitle;
 let savingOptions;
 let includeNewFiles = true;
 let nextCardId = 0;
+let playlistLoadedFor = "";
+
+async function refreshPlaylistChip(liveId) {
+  const chip = $("playlist-progress");
+  if (!chip) return;
+  if (!liveId) {
+    playlistLoadedFor = "";
+    chip.hidden = true;
+    return;
+  }
+  if (playlistLoadedFor === liveId) return;
+  playlistLoadedFor = liveId;
+  try {
+    const result = await send("GET_PLAYLIST");
+    if (!result?.supported || !Array.isArray(result.lessons) || !result.lessons.length) {
+      chip.hidden = true;
+      return;
+    }
+    const available = result.lessons.filter((lesson) => lesson.available);
+    const progress = result.progress || {};
+    const watched = available.filter((lesson) => {
+      const record = progress[lesson.liveId];
+      return record?.status === "watched" || Number(record?.ratio) >= 0.9;
+    }).length;
+    chip.textContent = `同课程 ${available.length} 节 · 已看 ${watched} 节`;
+    chip.hidden = false;
+  } catch {
+    chip.hidden = true;
+  }
+}
 
 async function send(type, fields = {}) {
   const result = await chrome.runtime.sendMessage({ type, tabId, ...fields });
@@ -186,6 +216,7 @@ function render(next) {
   if ($("summary").textContent !== summary) $("summary").textContent = summary;
   $("empty").hidden = next.media.length > 0;
   $("open-player").disabled = busy || next.media.length < 2;
+  void refreshPlaylistChip(next.liveId || "");
   const keys = new Set(next.media.map((media) => media.key));
   for (const [key, card] of cards) if (!keys.has(key)) { card.subtitles.setSource(""); card.player?.destroy(); card.remove(); cards.delete(key); }
   if (!cards.size) includeNewFiles = true;
