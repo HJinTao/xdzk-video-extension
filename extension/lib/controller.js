@@ -1,13 +1,26 @@
 import { downloadFilename, isCourseSubtitleUrl, isMediaUrl, isPlatformUrl, responseSize, sanitizeName } from "./media.js";
 import { applySnapshot, emptyState, sortedMedia, upsertMedia } from "./state.js";
 import { readCourseSubtitles } from "./course-subtitles.js";
+import {
+  XIDIAN_FID,
+  extractLiveId,
+  extractSourceOrigin,
+  extractWorkDetailId,
+  fetchCoursePlaylistInPage,
+  fetchLessonPageInPage,
+  fetchLessonSubtitlesInPage,
+  parseCourseLessons,
+  parsePlayVideoHtml
+} from "./course-playlist.js";
+import { createProgressStore } from "./watch-progress.js";
 
 const storageKey = (tabId) => `tab:${tabId}`;
 const supportedUrl = (url) => isPlatformUrl(url) || isMediaUrl(url);
 
-export function createController(api) {
+export function createController(api, { fetch: fetchImpl = globalThis.fetch } = {}) {
   const queues = new Map();
   const closedTabs = new Set();
+  const progressStore = createProgressStore(api.storage.local);
 
   function enqueue(tabId, task) {
     if (!Number.isInteger(tabId) || tabId < 0) return Promise.reject(new Error("找不到当前标签页。"));
@@ -66,8 +79,11 @@ export function createController(api) {
       filename: downloadFilename(state.titleOverride || state.courseTitle, item, index),
       download: await downloadItem(item)
     })));
+    const liveId = state.liveId || extractLiveId(tab.url) || media.map((item) => extractLiveId(item.frameUrl)).find(Boolean) || "";
+    const sourceOrigin = state.sourceOrigin || extractSourceOrigin(tab.url) || media.map((item) => extractSourceOrigin(item.frameUrl)).find(Boolean) || "";
     return {
       ok: true, supported: true, tabId, pageTitle: tab.title || "", updatedAt: state.updatedAt,
+      liveId, sourceOrigin,
       courseTitle: state.titleOverride || state.courseTitle || "课程录播", media, options: await options()
     };
   }
@@ -159,7 +175,16 @@ export function createController(api) {
     if (!current.supported || current.media.length < 2) throw new Error("至少需要两路视频，请先播放两路画面并重新识别。");
     const id = crypto.randomUUID();
     const key = `player:${id}`;
-    const payload = { sourceTabId: tabId, courseTitle: current.courseTitle, media: current.media, createdAt: Date.now() };
+    const payload = {
+      sourceTabId: tabId,
+      liveId: current.liveId || "",
+      currentLiveId: current.liveId || "",
+      sourceOrigin: current.sourceOrigin || "",
+      courseTitle: current.courseTitle,
+      lessonTitle: "",
+      media: current.media,
+      createdAt: Date.now()
+    };
     await api.storage.session.set({ [key]: payload });
     try {
       const tab = await api.tabs.create({ url: `${api.runtime.getURL("player.html")}?id=${id}` });
@@ -179,17 +204,180 @@ export function createController(api) {
     return payload;
   }
 
+  async function runPlatformTask(tabId, sourceOrigin, injectedFunc, args, fallbackTask) {
+    if (Number.isInteger(tabId) && tabId >= 0) {
+      try {
+        const tab = await tabFor(tabId);
+        if (isPlatformUrl(tab.url)) {
+          const [injection] = await api.scripting.executeScript({ target: { tabId, frameIds: [0] }, func: injectedFunc, args });
+          if (injection?.result) return injection.result;
+        }
+      } catch { /* Fall through to direct fetch when the source tab is unavailable. */ }
+    }
+    if (sourceOrigin && isPlatformUrl(sourceOrigin) && typeof fetchImpl === "function") {
+      try {
+        return await fallbackTask(sourceOrigin, fetchImpl);
+      } catch {
+        return { ok: false, error: "请求西电智课失败，请确认已登录后重试。" };
+      }
+    }
+    return { ok: false, error: "原回放页面已关闭，请重新打开西电智课回放页。" };
+  }
+
+  async function fetchPlaylist(tabId, sourceOrigin, liveId) {
+    return runPlatformTask(tabId, sourceOrigin, fetchCoursePlaylistInPage, [liveId, XIDIAN_FID], async (origin, doFetch) => {
+      const body = new URLSearchParams({ liveId: String(liveId), fid: XIDIAN_FID });
+      const response = await doFetch(`${origin}/xidianpj/live/listSignleCourse`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: body.toString()
+      });
+      if (!response.ok) return { ok: false, error: `课程目录请求失败（HTTP ${response.status}）。` };
+      const text = (await response.text()).trim();
+      if (!text || text.includes("请先登录") || text.startsWith("<")) {
+        return { ok: false, loginRequired: true, error: "西电智课登录已过期，请先刷新原回放页并重新登录。" };
+      }
+      const items = JSON.parse(text);
+      return Array.isArray(items) ? { ok: true, items } : { ok: false, error: "课程目录响应格式异常。" };
+    });
+  }
+
+  async function fetchLessonHtml(tabId, sourceOrigin, liveId) {
+    return runPlatformTask(tabId, sourceOrigin, fetchLessonPageInPage, [liveId], async (origin, doFetch) => {
+      const response = await doFetch(`${origin}/xidianpj/frontLive/playVideo2Keda?liveId=${encodeURIComponent(liveId)}`, {
+        credentials: "include"
+      });
+      if (!response.ok) return { ok: false, error: `课次视频请求失败（HTTP ${response.status}）。` };
+      return { ok: true, html: await response.text() };
+    });
+  }
+
+  async function fetchLessonSubtitles(tabId, sourceOrigin, liveId) {
+    return runPlatformTask(tabId, sourceOrigin, fetchLessonSubtitlesInPage, [liveId], async (origin, doFetch) => {
+      const pageResponse = await doFetch(`${origin}/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=${encodeURIComponent(liveId)}`, {
+        credentials: "include"
+      });
+      if (!pageResponse.ok) return { failed: true };
+      const html = await pageResponse.text();
+      if (html.includes("请先登录")) return { failed: true };
+      const workDetailId = extractWorkDetailId(html);
+      if (!workDetailId) return { failed: false };
+      const subResponse = await doFetch(`${origin}/xidianpj/smartSupervisor/getVideoSubtitles2Vtt?workDetailId=${encodeURIComponent(workDetailId)}`, {
+        credentials: "include"
+      });
+      if (!subResponse.ok) return { failed: true };
+      let text = (await subResponse.text()).replace(/^\ufeff/, "").trim();
+      const hasTiming = /^\s*(?:\d+:)?\d{2}:\d{2}[.,]\d{3}\s+-->/m;
+      if (text.startsWith("{") || text.startsWith('"') || text.startsWith("[")) {
+        let inline = "";
+        try {
+          JSON.parse(text, (_, value) => {
+            if (typeof value === "string" && !inline && hasTiming.test(value)) inline = value;
+            return value;
+          });
+        } catch { /* ignore */ }
+        if (inline) text = inline;
+      }
+      if (hasTiming.test(text)) return { text };
+      if (/^\s*</.test(text) || text.includes("请先登录")) return { failed: true };
+      return { failed: false };
+    });
+  }
+
+  async function getPlaylist(message) {
+    const fromPlayer = message.id !== undefined;
+    const payload = fromPlayer ? await readPlayer(message.id) : await view(message.tabId);
+    const liveId = String(payload.currentLiveId || payload.liveId || "");
+    const sourceOrigin = payload.sourceOrigin || "";
+    const sourceTabId = fromPlayer ? payload.sourceTabId : payload.tabId;
+    const [progress, prefs] = await Promise.all([progressStore.getAll(), progressStore.getPrefs()]);
+    if (!liveId) {
+      return { ok: true, supported: false, courseKey: "", courseTitle: payload.courseTitle || "", currentLiveId: "", lessons: [], progress, prefs };
+    }
+    const raw = await fetchPlaylist(sourceTabId, sourceOrigin, liveId);
+    if (!raw?.ok) throw new Error(raw?.error || "获取课程目录失败，请确认原回放页已登录后重试。");
+    const parsed = parseCourseLessons(raw.items);
+    const currentLesson = parsed.lessons.find((lesson) => lesson.liveId === liveId);
+    const courseTitle = parsed.courseTitle || payload.courseTitle || "课程录播";
+    if (fromPlayer) {
+      const updated = {
+        ...payload,
+        courseKey: parsed.courseKey,
+        courseTitle,
+        lessonTitle: currentLesson?.title || payload.lessonTitle || "",
+        lessons: parsed.lessons
+      };
+      await api.storage.session.set({ [`player:${message.id}`]: updated });
+    }
+    return {
+      ok: true,
+      supported: true,
+      courseKey: parsed.courseKey,
+      courseTitle,
+      lessonTitle: currentLesson?.title || "",
+      currentLiveId: liveId,
+      lessons: parsed.lessons,
+      progress,
+      prefs
+    };
+  }
+
+  async function loadLesson(id, liveId) {
+    const targetId = String(liveId || "");
+    if (!/^\d{1,20}$/.test(targetId)) throw new Error("课次编号无效。");
+    const payload = await readPlayer(id);
+    const raw = await fetchLessonHtml(payload.sourceTabId, payload.sourceOrigin, targetId);
+    if (!raw?.ok) throw new Error(raw?.error || "加载课次视频失败，请重试。");
+    const parsed = parsePlayVideoHtml(raw.html, targetId);
+    if (!parsed.ok) throw new Error(parsed.error);
+    if (parsed.media.length < 2) throw new Error("该课次仅识别到 1 路画面，暂不支持双路同步播放。");
+    const lesson = payload.lessons?.find((item) => item.liveId === targetId);
+    const lessonTitle = lesson?.title || "";
+    const updated = {
+      ...payload,
+      currentLiveId: targetId,
+      lessonTitle,
+      media: parsed.media
+    };
+    await api.storage.session.set({ [`player:${id}`]: updated });
+    return {
+      ok: true,
+      courseTitle: updated.courseTitle,
+      lessonTitle,
+      currentLiveId: targetId,
+      media: parsed.media
+    };
+  }
+
   async function playerData(id, refresh) {
     let payload = await readPlayer(id);
     let notice = "";
     if (refresh) {
+      const currentLiveId = payload.currentLiveId || payload.liveId || "";
+      if (currentLiveId && currentLiveId !== payload.liveId) {
+        return { ...(await loadLesson(id, currentLiveId)), notice: "" };
+      }
       const latest = await view(payload.sourceTabId);
       if (latest.supported && latest.media.length >= 2) {
-        payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media };
+        payload = { ...payload, courseTitle: latest.courseTitle, media: latest.media, liveId: latest.liveId || payload.liveId, currentLiveId: latest.liveId || payload.currentLiveId, sourceOrigin: latest.sourceOrigin || payload.sourceOrigin };
         await api.storage.session.set({ [`player:${id}`]: payload });
+      } else if (currentLiveId && payload.sourceOrigin) {
+        try {
+          return { ...(await loadLesson(id, currentLiveId)), notice: "" };
+        } catch {
+          notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
+        }
       } else notice = "原回放页已关闭或尚未识别到两路视频，当前保留上次的视频源。";
     }
-    return { ok: true, courseTitle: payload.courseTitle, media: payload.media, notice };
+    return {
+      ok: true,
+      courseTitle: payload.courseTitle,
+      lessonTitle: payload.lessonTitle || "",
+      currentLiveId: payload.currentLiveId || payload.liveId || "",
+      media: payload.media,
+      notice
+    };
   }
 
   async function subtitles(message) {
@@ -197,6 +385,12 @@ export function createController(api) {
     const tabId = source.sourceTabId ?? source.tabId;
     const item = source.media.find((media) => media.key === message.key);
     if (!item) throw new Error("找不到这个画面的字幕，请重新识别回放。");
+    if (item.liveId) {
+      const fetched = await fetchLessonSubtitles(tabId, source.sourceOrigin || "", item.liveId);
+      if (fetched?.text) return { ok: true, text: fetched.text };
+      if (fetched?.failed) throw new Error("读取课程字幕失败，请确认原回放页已登录后重试，或导入本地字幕。");
+      throw new Error("这个画面没有可用的课程字幕，可以导入 SRT 或 VTT 文件。");
+    }
     const target = item.documentId ? { tabId, documentIds: [item.documentId] } : { tabId, frameIds: [item.frameId ?? 0] };
     let result;
     try {
@@ -221,6 +415,26 @@ export function createController(api) {
     switch (message?.type) {
       case "OPEN_PLAYER": return openPlayer(tabId);
       case "GET_PLAYER": return playerData(message.id, !!message.refresh);
+      case "GET_PLAYLIST": return getPlaylist(message);
+      case "LOAD_LESSON": return loadLesson(message.id, message.liveId);
+      case "SAVE_PROGRESS": {
+        const record = await progressStore.save({
+          liveId: message.liveId,
+          courseKey: message.courseKey || "",
+          time: Number(message.time) || 0,
+          duration: Number(message.duration) || 0,
+          ended: !!message.ended
+        });
+        return { ok: true, record };
+      }
+      case "TOGGLE_WATCHED": {
+        const record = await progressStore.toggleWatched(message.liveId, message.courseKey || "");
+        return { ok: true, record };
+      }
+      case "GET_PROGRESS":
+        return { ok: true, progress: await progressStore.getAll(), prefs: await progressStore.getPrefs() };
+      case "SET_PLAYER_PREFS":
+        return { ok: true, prefs: await progressStore.setPrefs({ autoPlayNext: message.autoPlayNext }) };
       case "GET_SUBTITLES": return subtitles(message);
       case "GET_STATE": return view(tabId);
       case "SCAN_TAB": return scan(tabId);

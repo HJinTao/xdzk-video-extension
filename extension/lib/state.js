@@ -1,7 +1,8 @@
 import { inferCourseTitle, isMediaUrl, mediaKey, parseHttpUrl, preferUrl, recordingInfo } from "./media.js";
+import { extractLiveId, extractSourceOrigin } from "./course-playlist.js";
 
 export function emptyState(tabId) {
-  return { tabId, courseTitle: "", titleQuality: 0, titleOverride: "", frames: {}, media: [], updatedAt: 0 };
+  return { tabId, courseTitle: "", titleQuality: 0, titleOverride: "", liveId: "", sourceOrigin: "", frames: {}, media: [], updatedAt: 0 };
 }
 
 export function sortedMedia(state) {
@@ -40,6 +41,10 @@ export function applySnapshot(state, snapshot, frame = {}, now = Date.now()) {
     state.media = state.media.filter((item) => item.frameId !== frameId || (documentId && item.documentId === documentId));
   }
   state.frames[frameId] = { url: frameUrl, documentId, updatedAt: now };
+  const liveId = extractLiveId(frameUrl) || extractLiveId(snapshot.url);
+  if (liveId && (!state.liveId || frameId === 0 || changedDocument)) state.liveId = liveId;
+  const sourceOrigin = extractSourceOrigin(frameUrl) || extractSourceOrigin(snapshot.url);
+  if (sourceOrigin && (!state.sourceOrigin || frameId === 0)) state.sourceOrigin = sourceOrigin;
   const lesson = parseHttpUrl(frameUrl)?.searchParams.get("workDetailId");
   if (!changedDocument && previous?.subtitleUrl && (!lesson || parseHttpUrl(previous.subtitleUrl)?.searchParams.get("workDetailId") === lesson)) {
     state.frames[frameId].subtitleUrl = previous.subtitleUrl;

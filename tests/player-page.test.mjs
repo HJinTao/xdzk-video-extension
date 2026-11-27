@@ -8,18 +8,28 @@ import { bindSubtitles } from "../extension/lib/subtitles.js";
 import { bindPairedSubtitles } from "../extension/lib/paired-subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
 import { bindTranscript } from "../extension/lib/transcript.js";
+import { computeWatchStatus, resumeTimeFor } from "../extension/lib/watch-progress.js";
 import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/player.html", import.meta.url), "utf8");
 const code = (await readFile(new URL("../extension/player.js", import.meta.url), "utf8")).replace(/^import .+;\r?$/gm, "");
 const flush = () => new Promise((done) => setTimeout(done, 15));
-async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), prepareMedia } = {}) {
+async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), playlistResult, onMessage, prepareMedia } = {}) {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   const captionRequests = [];
   dom.window.chrome = { runtime: { async sendMessage(message) {
+    if (onMessage) {
+      const custom = await onMessage(message);
+      if (custom !== undefined) return custom;
+    }
     if (message.type === "GET_SUBTITLES") { captionRequests.push(message.key); return captionResult(message.key); }
+    if (message.type === "GET_PLAYLIST") {
+      return playlistResult ? structuredClone(playlistResult) : { ok: true, supported: false, lessons: [], progress: {}, prefs: { autoPlayNext: true } };
+    }
+    if (message.type === "SAVE_PROGRESS") return { ok: true, record: { liveId: message.liveId, time: message.time, duration: message.duration, ratio: message.ended ? 1 : (message.duration ? message.time / message.duration : 0), status: message.ended ? "watched" : "watching" } };
+    if (message.type === "SET_PLAYER_PREFS") return { ok: true, prefs: { autoPlayNext: message.autoPlayNext } };
     return { ok: true, courseTitle: "数据库系统", media: snapshot.media.map((item, index) => ({ ...item, key: mediaKey(item.url), label: labels[index], url: mediaUrl(index ? "CloudIPC-demo-b" : "CloudIPC-demo-a", stamp) })) };
   } } };
   dom.window.HTMLMediaElement.prototype.load = function() { this.currentTime = 0; queueMicrotask(() => this.dispatchEvent(new dom.window.Event("loadedmetadata"))); };
@@ -253,4 +263,100 @@ test("keyboard shortcuts seek and toggle playback without pausing active playbac
   await flush();
   assert.deepEqual(videos.map((v) => v.currentTime), [15, 15]);
   assert.ok(videos.every((v) => v.paused));
+});
+
+test("course playlist switches lessons in place, tracks watched status and counts down auto-next", async (t) => {
+  const lessons = [
+    { liveId: "101", index: 1, title: "第 1 周 周一 第 1-2 节", shortDate: "09-07", timeRange: "08:30–10:05", available: true },
+    { liveId: "102", index: 2, title: "第 1 周 周三 第 1-2 节", shortDate: "09-09", timeRange: "08:30–10:05", available: true },
+    { liveId: "103", index: 3, title: "第 2 周 周一 第 1-2 节", shortDate: "09-14", timeRange: "08:30–10:05", available: false }
+  ];
+  const progress = {
+    "101": { liveId: "101", courseKey: "code:CS101", time: 45, duration: 120, ratio: 0.375, status: "watching", manual: false }
+  };
+  const loadedLessons = [];
+  const savedProgress = [];
+  const { dom, document, videos } = await page({
+    playlistResult: { ok: true, supported: true, courseKey: "code:CS101", courseTitle: "数据库系统", currentLiveId: "101", lessons, progress, prefs: { autoPlayNext: true } },
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        return {
+          ok: true, courseTitle: "数据库系统", currentLiveId: "101",
+          media: [
+            { key: mediaKey(mediaUrl("CloudIPC-101-a")), label: "课件", url: mediaUrl("CloudIPC-101-a") },
+            { key: mediaKey(mediaUrl("CloudIPC-101-b")), label: "教室", url: mediaUrl("CloudIPC-101-b") }
+          ]
+        };
+      }
+      if (message.type === "LOAD_LESSON") {
+        loadedLessons.push(message.liveId);
+        return {
+          ok: true, courseTitle: "数据库系统", lessonTitle: "第 1 周 周三 第 1-2 节", currentLiveId: message.liveId,
+          media: [
+            { key: mediaKey(mediaUrl(`CloudIPC-${message.liveId}-a`)), label: "课件", url: mediaUrl(`CloudIPC-${message.liveId}-a`) },
+            { key: mediaKey(mediaUrl(`CloudIPC-${message.liveId}-b`)), label: "教室", url: mediaUrl(`CloudIPC-${message.liveId}-b`) }
+          ]
+        };
+      }
+      if (message.type === "SAVE_PROGRESS") {
+        savedProgress.push(message);
+        const status = message.ended || message.time / message.duration >= 0.9 ? "watched" : "watching";
+        progress[message.liveId] = { liveId: message.liveId, time: message.time, duration: message.duration, ratio: message.ended ? 1 : message.time / message.duration, status };
+        return { ok: true, record: progress[message.liveId] };
+      }
+      if (message.type === "TOGGLE_WATCHED") {
+        const nextStatus = progress[message.liveId]?.status === "watched" ? "unwatched" : "watched";
+        progress[message.liveId] = { liveId: message.liveId, time: nextStatus === "watched" ? 120 : 0, duration: 120, ratio: nextStatus === "watched" ? 1 : 0, status: nextStatus, manual: true };
+        return { ok: true, record: progress[message.liveId] };
+      }
+    },
+    prepareMedia(win) {
+      const states = new WeakMap();
+      Object.defineProperty(win.HTMLMediaElement.prototype, "paused", { get() { return states.get(this) ?? true; } });
+      win.HTMLMediaElement.prototype.play = function() { states.set(this, false); return Promise.resolve(); };
+      win.HTMLMediaElement.prototype.pause = function() { states.set(this, true); };
+    }
+  });
+  t.after(() => close(dom));
+
+  // Initial lesson auto-resumes to saved watching position (45s) and shows playlist controls.
+  assert.equal(document.querySelector("#toggle-playlist").hidden, false);
+  assert.equal(document.querySelector("#playlist-badge").textContent, "0/2");
+  assert.deepEqual(videos.map((v) => v.currentTime), [45, 45]);
+
+  // Opening playlist renders 3 items (1 upcoming disabled) and toggles manual watched state.
+  document.querySelector("#toggle-playlist").click();
+  assert.equal(document.querySelector("#playlist-panel").hidden, false);
+  const items = [...document.querySelectorAll("#playlist-list .playlist-item")];
+  assert.equal(items.length, 3);
+  assert.equal(items[2].querySelector(".lesson-select").disabled, true);
+
+  items[0].querySelector(".lesson-mark").click();
+  await flush();
+  assert.equal(document.querySelector("#playlist-badge").textContent, "1/2");
+
+  // Filtering to unwatched hides the watched lesson and the upcoming lesson.
+  const filter = document.querySelector("#playlist-filter");
+  filter.value = "unwatched";
+  filter.dispatchEvent(new dom.window.Event("change"));
+  assert.equal(document.querySelectorAll("#playlist-list .playlist-item").length, 1);
+  assert.equal(document.querySelector("#playlist-list .playlist-item").dataset.liveId, "102");
+
+  // Clicking Play then ending the lesson triggers auto-next countdown and marks ended.
+  document.querySelector("#play").click();
+  await flush();
+  videos[0].dispatchEvent(new dom.window.Event("ended"));
+  await flush();
+  assert.equal(document.querySelector("#next-countdown").hidden, false);
+  assert.match(document.querySelector("#next-countdown-text").textContent, /自动播放下一节/);
+  assert.ok(savedProgress.some((entry) => entry.liveId === "101" && entry.ended));
+
+  // Clicking "立即播放" loads lesson 102 seamlessly in place and begins playback.
+  document.querySelector("#play-next-now").click();
+  await flush();
+  assert.deepEqual(loadedLessons, ["102"]);
+  assert.match(videos[0].src, /CloudIPC-102-a/);
+  assert.match(videos[1].src, /CloudIPC-102-b/);
+  assert.equal(document.querySelector("#next-countdown").hidden, true);
+  assert.ok(videos.every((v) => !v.paused));
 });

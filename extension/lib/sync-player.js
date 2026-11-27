@@ -10,11 +10,12 @@ function isBufferedSeek(video) {
 }
 
 export class SyncPlayer {
-  constructor(videos, { onState = () => {}, onError = () => {}, interval = 250 } = {}) {
+  constructor(videos, { onState = () => {}, onError = () => {}, onEnded = () => {}, interval = 250 } = {}) {
     if (videos.length !== 2) throw new Error("请选择两路画面。");
     this.videos = videos;
     this.onState = onState;
     this.onError = onError;
+    this.onEnded = onEnded;
     this.offset = 0;
     this.rate = 1;
     this.leader = 0;
@@ -67,7 +68,10 @@ export class SyncPlayer {
       this.listen(video, "playing", onReady);
       this.listen(video, "loadedmetadata", () => { this.seek(this.time()); this.emit(); });
       this.listen(video, "durationchange", () => this.emit());
-      this.listen(video, "ended", () => { this.pause(); this.emit(); });
+      this.listen(video, "ended", () => {
+        if (this.wantPlaying) this.finish();
+        else { this.pause(); this.emit(); }
+      });
       this.listen(video, "error", () => {
         this.pause();
         this.onError(`画面 ${index + 1} 加载失败，请刷新原回放页面、重新识别后更新视频源。`);
@@ -259,10 +263,20 @@ export class SyncPlayer {
     }
   }
 
+  finish() {
+    if (!this.wantPlaying || this.destroyed) return;
+    this.pause();
+    this.onEnded();
+  }
+
   tick() {
     if (this.destroyed) return;
     const range = this.range();
-    if (this.wantPlaying && range && this.time() >= range.end - .06) { this.seek(range.end); this.pause(); }
+    if (this.wantPlaying && range && this.time() >= range.end - .06) {
+      this.videos.forEach((_, index) => this.setTime(index, range.end + (index === 1 ? this.offset : 0)));
+      this.finish();
+      return;
+    }
     if (this.wantPlaying) {
       this.resumeIfReady();
       this.videos.forEach((video, index) => {
