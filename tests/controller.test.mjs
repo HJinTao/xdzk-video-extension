@@ -185,3 +185,48 @@ test("remembers the current frame's subtitle GET before its first scan and drops
   await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot: { ...snapshot, url: next } }, { ...pageSender, url: next });
   assert.equal(session["tab:1"].frames[0].subtitleUrl, undefined);
 });
+
+test("skips redundant session writes and badge updates for unchanged 206 range responses", async () => {
+  const { api } = createApi();
+  let sessionWrites = 0;
+  let badgeUpdates = 0;
+  const originalSet = api.storage.session.set.bind(api.storage.session);
+  api.storage.session.set = async (values) => { sessionWrites++; return originalSet(values); };
+  api.action.setBadgeText = async () => { badgeUpdates++; };
+
+  const controller = createController(api);
+  await controller.recordResponse(response("CloudIPC-demo-a"));
+  assert.equal(sessionWrites, 1);
+  assert.equal(badgeUpdates, 1);
+
+  for (let i = 0; i < 8; i++) await controller.recordResponse(response("CloudIPC-demo-a"));
+  assert.equal(sessionWrites, 1);
+  assert.equal(badgeUpdates, 1);
+
+  // A newer signature still triggers a write.
+  await controller.recordResponse({ ...response("CloudIPC-demo-a"), url: mediaUrl("CloudIPC-demo-a", 1700000900) });
+  assert.equal(sessionWrites, 2);
+  assert.equal(badgeUpdates, 2);
+});
+
+test("independent player falls back to authenticated subtitle fetch for its initial lesson when the source tab is closed", async () => {
+  const { api, createdTabs } = createApi();
+  const fakeFetch = async (url) => {
+    if (url.includes("/viewNewCourseLive1")) return { ok: true, text: async () => "var workDetailId = '555666';" };
+    if (url.includes("/getVideoSubtitles2Vtt?workDetailId=555666")) {
+      return { ok: true, text: async () => "WEBVTT\n\n00:01.000 --> 00:03.000\n兜底字幕内容" };
+    }
+    return { ok: false, status: 404, text: async () => "" };
+  };
+  const controller = createController(api, { fetch: fakeFetch });
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  const id = new URL(createdTabs[0].url).searchParams.get("id");
+  const playerSender = { id: "test-extension", url: createdTabs[0].url };
+
+  // Close the source tab so scripting.executeScript cannot reach the original frame.
+  api.tabs.get = async () => { throw new Error("No tab with id"); };
+  const sub = await controller.dispatch({ type: "GET_SUBTITLES", id, key: mediaKey(mediaUrl()) }, playerSender);
+  assert.equal(sub.ok, true);
+  assert.match(sub.text, /兜底字幕内容/);
+});

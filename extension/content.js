@@ -7,6 +7,10 @@
   let disconnected = false;
   let pageContext = location.href;
   let resourceCutoff = 0;
+  let cachedHeadings = [];
+  let cachedPageText = "";
+  let lastTextReadAt = 0;
+  let hasCourseText = false;
   const videoHost = "kdlbptvideo.xidian.edu.cn";
   const pageMedia = () => {
     const media = [];
@@ -39,13 +43,28 @@
 
   const scan = async (force = true) => {
     if (disconnected) return { ok: false };
-    if (pageContext !== location.href) { resourceCutoff = performance.now(); pageContext = location.href; }
+    if (pageContext !== location.href) {
+      resourceCutoff = performance.now();
+      pageContext = location.href;
+      cachedHeadings = [];
+      cachedPageText = "";
+      lastTextReadAt = 0;
+      hasCourseText = false;
+    }
     const media = pageMedia();
+    const now = performance.now();
+    // Avoid triggering synchronous innerText layout reflows on every playback DOM mutation.
+    if (force || (!hasCourseText && (lastTextReadAt === 0 || now - lastTextReadAt >= 1500))) {
+      cachedHeadings = [...document.querySelectorAll("h1, h2")].slice(0, 8).map((node) => node.textContent.trim());
+      cachedPageText = (document.body?.innerText || document.body?.textContent || "").slice(0, 10000);
+      lastTextReadAt = now;
+      hasCourseText = /课程\s*[：:]/.test(cachedPageText);
+    }
     const snapshot = {
       url: location.href,
       title: document.title,
-      headings: [...document.querySelectorAll("h1, h2")].slice(0, 8).map((node) => node.textContent.trim()),
-      pageText: (document.body?.innerText || document.body?.textContent || "").slice(0, 10000),
+      headings: cachedHeadings,
+      pageText: cachedPageText,
       media,
       authoritative: media.some((item) => Number.isInteger(item.videoIndex))
     };

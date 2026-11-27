@@ -13,21 +13,40 @@ export function upsertMedia(state, candidate, now = Date.now()) {
   const key = mediaKey(candidate.url);
   if (!key) return false;
   let media = state.media.find((item) => item.key === key);
+  let changed = false;
   if (!media) {
     if (state.media.length >= 40) return false;
     media = { key, url: candidate.url, frameId: candidate.frameId ?? 0, firstSeen: now, lastSeen: now, label: "", size: 0 };
     state.media.push(media);
+    changed = true;
   }
-  media.url = preferUrl(media.url, candidate.url);
+  const nextUrl = preferUrl(media.url, candidate.url);
+  if (nextUrl !== media.url) {
+    media.url = nextUrl;
+    changed = true;
+  }
   media.lastSeen = now;
   for (const field of ["frameId", "documentId", "frameUrl", "videoIndex", "width", "height", "duration"]) {
-    if (candidate[field] !== undefined && candidate[field] !== null && candidate[field] !== "") media[field] = candidate[field];
+    if (candidate[field] !== undefined && candidate[field] !== null && candidate[field] !== "" && media[field] !== candidate[field]) {
+      media[field] = candidate[field];
+      changed = true;
+    }
   }
-  if (Number.isSafeInteger(candidate.size) && candidate.size > 0) media.size = candidate.size;
-  if (candidate.source === "dom" && candidate.suggestedLabel && !media.label) media.label = String(candidate.suggestedLabel).slice(0, 48);
-  media.camera = recordingInfo(media.url).camera;
-  state.updatedAt = now;
-  return true;
+  if (Number.isSafeInteger(candidate.size) && candidate.size > 0 && media.size !== candidate.size) {
+    media.size = candidate.size;
+    changed = true;
+  }
+  if (candidate.source === "dom" && candidate.suggestedLabel && !media.label) {
+    media.label = String(candidate.suggestedLabel).slice(0, 48);
+    changed = true;
+  }
+  const nextCamera = recordingInfo(media.url).camera;
+  if (media.camera !== nextCamera) {
+    media.camera = nextCamera;
+    changed = true;
+  }
+  if (changed) state.updatedAt = now;
+  return changed;
 }
 
 export function applySnapshot(state, snapshot, frame = {}, now = Date.now()) {

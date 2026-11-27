@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { categorizeCommits, formatReleaseNotes } from "../scripts/release-notes.mjs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { categorizeCommits, findPreviousTag, formatReleaseNotes } from "../scripts/release-notes.mjs";
 
 test("categorizes conventional commits into features, fixes and other improvements", () => {
   const groups = categorizeCommits([
@@ -40,4 +43,30 @@ test("README uses version-agnostic release links without hardcoded release versi
   assert.match(readme, /releases\/latest\)/);
   assert.doesNotMatch(readme, /releases\/(?:download|tag)\/v\d+\.\d+\.\d+/);
   assert.doesNotMatch(readme, /xdzk-recorder-\d+\.\d+\.\d+\.(?:zip|crx)/);
+});
+
+test("findPreviousTag resolves the topologically closest ancestor tag even when an older tag has a higher semver", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "xdzk-tags-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const run = (args) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+  run(["init"]);
+  run(["config", "user.name", "Tester"]);
+  run(["config", "user.email", "tester@example.com"]);
+
+  await writeFile(join(dir, "a.txt"), "1");
+  run(["add", "."]);
+  run(["commit", "-m", "initial"]);
+  run(["tag", "v0.6.0"]);
+
+  await writeFile(join(dir, "a.txt"), "2");
+  run(["add", "."]);
+  run(["commit", "-m", "release 0.5.2"]);
+  run(["tag", "v0.5.2"]);
+
+  await writeFile(join(dir, "a.txt"), "3");
+  run(["add", "."]);
+  run(["commit", "-m", "next feature"]);
+
+  assert.equal(findPreviousTag("v0.6.0", dir), "v0.5.2");
+  assert.equal(findPreviousTag("v0.5.3", dir), "v0.5.2");
 });

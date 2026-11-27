@@ -42,7 +42,7 @@ export class SyncPlayer {
       // from the last commanded state is a new native play or pause.
       this.listen(video, "play", () => {
         if (video.paused || this.expected[index].playing === true) return;
-        this.leader = index;
+        this.leader = this.audio >= 0 ? this.audio : index;
         void this.play();
       });
       this.listen(video, "pause", () => {
@@ -174,7 +174,7 @@ export class SyncPlayer {
     if (!Number.isFinite(value) || Math.abs(value) > 86400) return;
     const time = this.time();
     this.offset = value;
-    this.leader = 0;
+    this.leader = this.audio >= 0 ? this.audio : 0;
     this.seek(time);
     if (!this.range()) this.pause();
     this.emit();
@@ -183,6 +183,10 @@ export class SyncPlayer {
   setAudio(index) {
     if (![0, 1, -1].includes(index)) return;
     this.audio = index;
+    if (index >= 0 && this.leader !== index) {
+      this.leader = index;
+      this.setElementRate(index, this.rate);
+    }
     this.enforceAudio();
     this.emit();
   }

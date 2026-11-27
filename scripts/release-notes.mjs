@@ -86,16 +86,18 @@ export function formatReleaseNotes({
   return sections.join("\n").trim() + "\n";
 }
 
-function git(args) {
+function git(args, cwd = root) {
   try {
-    return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return "";
   }
 }
 
-export function findPreviousTag(currentTag) {
-  const tags = git(["tag", "--merged", "HEAD", "--list", "v*", "--sort=-v:refname"]).split(/\r?\n/).filter(Boolean);
+export function findPreviousTag(currentTag, cwd = root) {
+  const described = git(["describe", "--tags", "--abbrev=0", "--match", "v*", "--exclude", currentTag], cwd);
+  if (described) return described;
+  const tags = git(["tag", "--merged", "HEAD", "--list", "v*", "--sort=-creatordate"], cwd).split(/\r?\n/).filter(Boolean);
   return tags.find((tag) => tag !== currentTag) || "";
 }
 

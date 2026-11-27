@@ -6,6 +6,7 @@ import { createController } from "../extension/lib/controller.js";
 import { formatBytes, formatDuration, recordingInfo } from "../extension/lib/media.js";
 import { bindSubtitles } from "../extension/lib/subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
+import { computeWatchStatus } from "../extension/lib/watch-progress.js";
 import { createApi, createPlayerStub, snapshot, popupSender, pageSender, mediaUrl } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/popup.html", import.meta.url), "utf8");
@@ -25,7 +26,7 @@ async function mount(options = {}) {
   const dom = new JSDOM(html, { url: popupSender.url, runScripts: "outside-only", pretendToBeVisual: true });
   fixture.api.runtime.sendMessage = (message) => controller.dispatch(message, popupSender);
   fixture.api.scripting.executeScript = async () => { await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot: options.snapshot ?? snapshot }, pageSender); return []; };
-  Object.assign(dom.window, { chrome: fixture.api, formatBytes, formatDuration, recordingInfo, bindSubtitles, bindPlaybackSpeed, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { chrome: fixture.api, formatBytes, formatDuration, recordingInfo, bindSubtitles, bindPlaybackSpeed, computeWatchStatus, createLecturePlayer: createPlayerStub });
   dom.window.HTMLMediaElement.prototype.play = () => Promise.resolve();
   dom.window.HTMLMediaElement.prototype.pause = () => {};
   dom.window.HTMLMediaElement.prototype.load = () => {};
@@ -231,4 +232,71 @@ test("popup shows course playlist progress summary when the course list is avail
   document.querySelector("#scan").click();
   await until(() => !document.querySelector("#playlist-progress").hidden);
   assert.equal(document.querySelector("#playlist-progress").textContent, "同课程 2 节 · 已看 1 节");
+});
+
+test("popup respects manual unwatched status via computeWatchStatus and reacts to session storage events", async (t) => {
+  const listeners = new Set();
+  const fixture = await mount();
+  const { dom, document, api, controller } = fixture;
+  t.after(() => dom.window.close());
+
+  const originalExecute = api.scripting.executeScript;
+  api.scripting.executeScript = async (details) => {
+    if (details.func?.name === "fetchCoursePlaylistInPage") {
+      return [{
+        result: {
+          ok: true,
+          items: [
+            { id: 100, courseCode: "CS101", courseName: "数据库系统", days: 1, jie: "1-2", startTime: { time: 1700000000000 }, endTime: { time: 1700003600000 } },
+            { id: 101, courseCode: "CS101", courseName: "数据库系统", days: 1, jie: "3-4", startTime: { time: 1700007200000 }, endTime: { time: 1700010800000 } }
+          ]
+        }
+      }];
+    }
+    return originalExecute(details);
+  };
+  await api.storage.local.set({
+    "watchProgress:v1": {
+      "100": { liveId: "100", status: "unwatched", manual: true, ratio: 0.95 },
+      "101": { liveId: "101", status: "watched", ratio: 1 }
+    }
+  });
+  document.querySelector("#scan").click();
+  await until(() => !document.querySelector("#playlist-progress").hidden);
+  assert.equal(document.querySelector("#playlist-progress").textContent, "同课程 2 节 · 已看 1 节");
+
+  // Also verify storage.onChanged event path updates UI immediately without waiting for the 1.2s timer.
+  const dom2 = new JSDOM(html, { url: popupSender.url, runScripts: "outside-only", pretendToBeVisual: true });
+  t.after(() => dom2.window.close());
+  const eventFixture = createApi();
+  const eventController = createController(eventFixture.api);
+  eventFixture.api.storage.onChanged = {
+    addListener(fn) { listeners.add(fn); },
+    removeListener(fn) { listeners.delete(fn); }
+  };
+  const origSet = eventFixture.api.storage.session.set.bind(eventFixture.api.storage.session);
+  eventFixture.api.storage.session.set = async (values) => {
+    await origSet(values);
+    const changes = Object.fromEntries(Object.keys(values).map((k) => [k, { newValue: values[k] }]));
+    for (const fn of listeners) fn(changes, "session");
+  };
+  eventFixture.api.runtime.sendMessage = (message) => eventController.dispatch(message, popupSender);
+  eventFixture.api.scripting.executeScript = async () => { await eventController.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender); return []; };
+  Object.assign(dom2.window, { chrome: eventFixture.api, formatBytes, formatDuration, recordingInfo, bindSubtitles, bindPlaybackSpeed, computeWatchStatus, createLecturePlayer: createPlayerStub });
+  dom2.window.HTMLMediaElement.prototype.play = () => Promise.resolve();
+  dom2.window.HTMLMediaElement.prototype.pause = () => {};
+  dom2.window.HTMLMediaElement.prototype.load = () => {};
+  dom2.window.eval(code);
+
+  await until(() => dom2.window.document.querySelectorAll(".media-card").length === 2);
+  const before = Date.now();
+  await eventController.recordResponse({
+    tabId: 1, frameId: 0, documentId: "doc-a", url: mediaUrl("CloudIPC-demo-c"), statusCode: 206,
+    responseHeaders: [{ name: "Content-Type", value: "video/mp4" }, { name: "Content-Range", value: "bytes 0-31/4096" }]
+  });
+  await until(() => dom2.window.document.querySelectorAll(".media-card").length === 3);
+  assert.ok(Date.now() - before < 800, "storage.onChanged refreshes popup without waiting for 1200ms poll");
+  assert.equal(listeners.size, 1);
+  dom2.window.dispatchEvent(new dom2.window.Event("pagehide"));
+  assert.equal(listeners.size, 0);
 });
