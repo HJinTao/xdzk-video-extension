@@ -199,3 +199,58 @@ test("opening, searching and seeking secondary-camera captions respects offset, 
   get("review-source").value = "0"; get("review-source").dispatchEvent(new Event("change"));
   assert.equal(captionRequests.length, 2);
 });
+
+test("keyboard shortcuts seek and toggle playback without pausing active playback or hijacking inputs", async (t) => {
+  const { dom, document, videos } = await page({
+    prepareMedia(win) {
+      const states = new WeakMap();
+      Object.defineProperty(win.HTMLMediaElement.prototype, "paused", { get() { return states.get(this) ?? true; } });
+      win.HTMLMediaElement.prototype.play = function() { states.set(this, false); return Promise.resolve(); };
+      win.HTMLMediaElement.prototype.pause = function() { states.set(this, true); };
+    }
+  });
+  t.after(() => close(dom));
+  const key = (code, init = {}, target = document.body) => {
+    target.dispatchEvent(new dom.window.KeyboardEvent("keydown", { code, bubbles: true, cancelable: true, ...init }));
+  };
+
+  key("Space");
+  await flush();
+  assert.equal(document.querySelector("#play").textContent, "暂停");
+  assert.ok(videos.every((v) => !v.paused));
+
+  key("ArrowRight");
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [5, 5]);
+  assert.ok(videos.every((v) => !v.paused));
+
+  key("ArrowRight", { shiftKey: true });
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [15, 15]);
+  assert.ok(videos.every((v) => !v.paused));
+
+  key("ArrowLeft");
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [10, 10]);
+  assert.ok(videos.every((v) => !v.paused));
+
+  // Pressing Space while focus is on +10s still toggles playback cleanly.
+  key("Space", {}, document.querySelector("#forward"));
+  await flush();
+  assert.equal(document.querySelector("#play").textContent, "播放");
+  assert.ok(videos.every((v) => v.paused));
+
+  // Seeking while paused stays paused.
+  key("ArrowRight");
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [15, 15]);
+  assert.ok(videos.every((v) => v.paused));
+
+  // Editable fields are never hijacked.
+  const search = document.querySelector("#cue-search");
+  key("Space", {}, search);
+  key("ArrowRight", {}, search);
+  await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [15, 15]);
+  assert.ok(videos.every((v) => v.paused));
+});

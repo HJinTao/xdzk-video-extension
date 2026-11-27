@@ -92,12 +92,14 @@ test("native play, pause and playback rate changes propagate to both videos", as
   } finally { engine.destroy(); }
 });
 
-test("buffering pauses the pair without losing the intent to resume", async () => {
+test("buffering holds only the ready peer so the buffering video keeps fetching and resumes together", async () => {
   const { videos, engine } = setup();
   try {
     await engine.play(); await flush();
+    assert.ok(videos.every((video) => video.preload === "auto"));
     videos[1].readyState = 2; videos[1].emit("waiting"); await flush();
-    assert.ok(videos.every((video) => video.paused));
+    assert.equal(videos[0].paused, true);
+    assert.equal(videos[1].paused, false);
     assert.equal(engine.wantPlaying, true);
     videos[1].readyState = 4; videos[1].emit("canplay"); await flush();
     assert.ok(videos.every((video) => !video.paused));
@@ -113,9 +115,14 @@ test("overlapping waits resume together unless the viewer pauses during bufferin
     for (const video of videos) { video.readyState = 2; video.emit("waiting"); }
     await flush();
     assert.equal(engine.wantPlaying, true);
+    assert.ok(videos.every((v) => !v.paused));
     videos[0].readyState = 4; videos[0].emit("canplay");
-    if (cancel) engine.pause();
-    assert.ok(videos.every((v) => v.paused));
+    assert.equal(videos[0].paused, true);
+    assert.equal(videos[1].paused, false);
+    if (cancel) {
+      engine.pause();
+      assert.ok(videos.every((v) => v.paused));
+    }
     videos[1].readyState = 4; videos[1].emit("canplay");
     await flush();
     assert.equal(engine.wantPlaying, !cancel);
@@ -153,14 +160,75 @@ test("buffering during an unresolved play ignores the resulting AbortError and r
   videos[1].pause = function() { originalPause(); rejectPending?.(new Error("AbortError")); };
   try {
     const starting = engine.play();
-    videos[1].readyState = 2; videos[1].emit("waiting");
+    videos[0].readyState = 2; videos[0].emit("waiting");
     await starting; await flush();
     assert.equal(engine.wantPlaying, true);
     assert.equal(errors.length, 0);
     videos[1].play = originalPlay;
-    videos[1].readyState = 4; videos[1].emit("canplay"); await flush();
+    videos[0].readyState = 4; videos[0].emit("canplay"); await flush();
     assert.ok(videos.every((video) => !video.paused));
   } finally { engine.destroy(); }
+});
+
+test("unbuffered seeks keep seeking videos unpaused and auto-resume once buffered", async (t) => {
+  const { videos, engine } = setup();
+  t.after(() => engine.destroy());
+  await engine.play();
+  await flush();
+  for (const video of videos) {
+    video.buffered = { length: 1, start: () => 0, end: () => 15 };
+  }
+  engine.seek(60);
+  for (const video of videos) {
+    video.readyState = 1;
+    video.emit("waiting");
+  }
+  await flush();
+  // Neither seeking video is paused while fetching the unbuffered range.
+  assert.equal(engine.wantPlaying, true);
+  assert.ok(videos.every((v) => !v.paused));
+
+  // If one finishes first, it waits briefly while the slower peer stays unpaused.
+  videos[0].readyState = 4; videos[0].emit("canplay");
+  await flush();
+  assert.equal(videos[0].paused, true);
+  assert.equal(videos[1].paused, false);
+
+  // Even if canplay is missed and only playing or tick arrives, playback resumes.
+  videos[1].readyState = 4;
+  engine.tick();
+  await flush();
+  assert.equal(engine.wantPlaying, true);
+  assert.equal(engine.buffering.size, 0);
+  assert.ok(videos.every((v) => !v.paused));
+
+  // Seeking again while a peer is held releases the hold immediately.
+  videos[1].readyState = 2; videos[1].emit("waiting");
+  await flush();
+  assert.equal(videos[0].paused, true);
+  videos[1].readyState = 4;
+  engine.seek(80);
+  await flush();
+  assert.ok(engine.wantPlaying && videos.every((v) => !v.paused));
+});
+
+test("seeking in fullscreen does not pause the visible video when the hidden muted peer buffers", async (t) => {
+  const { videos, engine } = setup();
+  t.after(() => engine.destroy());
+  const fakeDoc = { fullscreenElement: videos[0] };
+  videos.forEach((video) => { video.ownerDocument = fakeDoc; });
+  let pauses = 0;
+  videos[0].addEventListener("pause", () => { pauses++; });
+  await engine.play();
+  await flush();
+  engine.seek(50);
+  videos[1].readyState = 1;
+  videos[1].emit("waiting");
+  await flush();
+  assert.equal(pauses, 0);
+  assert.equal(engine.wantPlaying, true);
+  assert.equal(videos[0].paused, false);
+  assert.equal(engine.buffering.size, 0);
 });
 
 test("only the chosen audio stays enabled even if native volume controls unmute the other video", async () => {
