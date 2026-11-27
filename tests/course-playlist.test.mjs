@@ -13,6 +13,14 @@ import {
   resumeTimeFor,
   toggleManualWatched
 } from "../extension/lib/watch-progress.js";
+import {
+  buildAudioPref,
+  channelRole,
+  mergePlayerPrefs,
+  normalizePlayerPrefs,
+  resolveAudioPref,
+  resolveOffsetPref
+} from "../extension/lib/player-prefs.js";
 import { createController } from "../extension/lib/controller.js";
 import { createApi, mediaUrl, pageSender, popupSender, snapshot } from "./fixtures.mjs";
 
@@ -249,4 +257,55 @@ test("auto-refresh re-signs expired URLs via playVideo2Keda, keeps labels and ta
     controller.dispatch({ type: "GET_PLAYER", id: playerId, refresh: true, auto: true }, playerSender),
     (err) => err.reason === "network"
   );
+});
+
+test("player-prefs normalizes, layers global/course preferences, matches camera roles and persists via controller", async () => {
+  assert.equal(channelRole("课件画面"), "slide");
+  assert.equal(channelRole("教室全景"), "classroom");
+  assert.equal(channelRole("画面 1"), "");
+
+  let prefs = normalizePlayerPrefs();
+  assert.deepEqual(prefs, { autoPlayNext: true, rate: 1, volume: 1, captionsEnabled: true, audio: null, courses: {} });
+
+  const classroomAudio = buildAudioPref(1, [{ label: "课件" }, { label: "教室" }]);
+  assert.deepEqual(classroomAudio, { mode: "channel", role: "classroom", index: 1 });
+
+  prefs = mergePlayerPrefs(prefs, { rate: 2, volume: 0.75, captionsEnabled: false, audio: classroomAudio, courseKey: "code:CS101", offset: 1.5 }, 100);
+  // Role matching finds "教室" even when swapped to index 0, and falls back to index when labels are generic.
+  assert.equal(resolveAudioPref(prefs, "code:CS101", [{ label: "教室" }, { label: "课件" }]), 0);
+  assert.equal(resolveAudioPref(prefs, "code:OTHER", [{ label: "画面 1" }, { label: "画面 2" }]), 1);
+  assert.equal(resolveOffsetPref(prefs, "code:CS101"), 1.5);
+  assert.equal(resolveOffsetPref(prefs, "code:OTHER"), undefined);
+
+  // Clearing course offset removes only the offset while preserving audio.
+  prefs = mergePlayerPrefs(prefs, { courseKey: "code:CS101", offset: null }, 200);
+  assert.equal(resolveOffsetPref(prefs, "code:CS101"), undefined);
+  assert.equal(resolveAudioPref(prefs, "code:CS101", [{ label: "教室" }, { label: "课件" }]), 0);
+
+  // Verify controller round-trip via SET_PLAYER_PREFS and GET_PLAYER.
+  const { api, createdTabs } = createApi();
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  const playerId = new URL(createdTabs[0].url).searchParams.get("id");
+  const playerSender = { id: "test-extension", url: createdTabs[0].url };
+
+  const updated = await controller.dispatch({
+    type: "SET_PLAYER_PREFS",
+    rate: 1.75,
+    volume: 0.8,
+    captionsEnabled: false,
+    audio: { mode: "muted" },
+    courseKey: "code:CS101",
+    offset: -1.2
+  }, playerSender);
+  assert.equal(updated.prefs.rate, 1.75);
+  assert.equal(updated.prefs.volume, 0.8);
+  assert.equal(updated.prefs.captionsEnabled, false);
+  assert.deepEqual(updated.prefs.audio, { mode: "muted" });
+  assert.equal(updated.prefs.courses["code:CS101"].offset, -1.2);
+
+  const loaded = await controller.dispatch({ type: "GET_PLAYER", id: playerId }, playerSender);
+  assert.equal(loaded.prefs.rate, 1.75);
+  assert.equal(loaded.prefs.volume, 0.8);
 });

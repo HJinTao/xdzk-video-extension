@@ -393,10 +393,12 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
           await api.storage.session.set({ [`player:${id}`]: payload });
           return {
             ok: true,
+            courseKey: payload.courseKey || "",
             courseTitle: payload.courseTitle,
             lessonTitle: payload.lessonTitle || "",
             currentLiveId,
             media: mergedMedia,
+            prefs: await progressStore.getPrefs(),
             notice: ""
           };
         } catch (error) {
@@ -418,10 +420,12 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
     }
     return {
       ok: true,
+      courseKey: payload.courseKey || "",
       courseTitle: payload.courseTitle,
       lessonTitle: payload.lessonTitle || "",
       currentLiveId: payload.currentLiveId || payload.liveId || "",
       media: payload.media,
+      prefs: await progressStore.getPrefs(),
       notice
     };
   }
@@ -488,8 +492,13 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       }
       case "GET_PROGRESS":
         return { ok: true, progress: await progressStore.getAll(), prefs: await progressStore.getPrefs() };
-      case "SET_PLAYER_PREFS":
-        return { ok: true, prefs: await progressStore.setPrefs({ autoPlayNext: message.autoPlayNext }) };
+      case "SET_PLAYER_PREFS": {
+        const patch = {};
+        for (const field of ["autoPlayNext", "rate", "volume", "captionsEnabled", "audio", "offset", "courseKey"]) {
+          if (Object.prototype.hasOwnProperty.call(message, field)) patch[field] = message[field];
+        }
+        return { ok: true, prefs: await progressStore.setPrefs(patch) };
+      }
       case "GET_SUBTITLES": return subtitles(message);
       case "GET_STATE": return view(tabId);
       case "SCAN_TAB": return scan(tabId);
