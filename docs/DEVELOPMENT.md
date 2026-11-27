@@ -19,7 +19,8 @@
 
 ```sh
 npm ci --ignore-scripts
-npm run check      # 校验 manifest、权限边界、资源引用与 JS 语法
+npm run check      # 校验 manifest、权限边界、资源引用、JS 语法与 TypeScript checkJs 类型检查
+npm run typecheck  # 单独运行零构建 TypeScript checkJs 静态类型检查
 npm test           # 运行全部单元测试
 npm run preview    # 使用内置 mock 数据预览弹窗与同步播放器页面
 npm run build      # 生成精简版扩展 ZIP 安装包与 SHA-256 校验值

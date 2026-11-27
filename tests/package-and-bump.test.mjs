@@ -17,7 +17,7 @@ test("buildArchive packages only extension runtime files without docs screenshot
   assert.ok(files.includes("manifest.json"));
   assert.ok(files.includes("player.html"));
   assert.ok(files.includes("popup.html"));
-  assert.ok(files.every((name) => !name.startsWith("docs/") && !name.includes("/.") && !name.startsWith(".")));
+  assert.ok(files.every((name) => !name.startsWith("docs/") && !name.includes("/.") && !name.startsWith(".") && !name.endsWith(".d.ts")));
   assert.ok(bytes.length < 512 * 1024, `expected slim extension zip under 512 KB, got ${bytes.length} bytes`);
 });
 
@@ -28,4 +28,6 @@ test("README avoids external shields.io badges and gitattributes excludes dev fi
   assert.match(readme, /github\.com\/Pais1ey\/xdzk-video-extension\/actions\/workflows\/ci\.yml\/badge\.svg/);
   assert.match(attrs, /^tests export-ignore$/m);
   assert.match(attrs, /^\.github export-ignore$/m);
+  assert.match(attrs, /^tsconfig\.json export-ignore$/m);
+  assert.match(attrs, /^types export-ignore$/m);
 });

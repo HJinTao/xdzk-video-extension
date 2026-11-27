@@ -5,6 +5,9 @@ import { bindPlaybackSpeed } from "./lib/playback-speed.js";
 import { computeWatchStatus } from "./lib/watch-progress.js";
 
 const $ = (id) => document.getElementById(id);
+const $input = (id) => /** @type {HTMLInputElement} */ (document.getElementById(id));
+const $button = (id) => /** @type {HTMLButtonElement} */ (document.getElementById(id));
+const $template = (id) => /** @type {HTMLTemplateElement} */ (document.getElementById(id));
 const cards = new Map();
 let tabId;
 let state;
@@ -67,7 +70,7 @@ function fileSize(item) {
 function updateSelection() {
   const selected = selectedFiles();
   const total = state?.media?.length || 0;
-  const all = $("select-all");
+  const all = $input("select-all");
   all.checked = total > 0 && selected.length === total;
   all.indeterminate = selected.length > 0 && selected.length < total;
   all.disabled = !total;
@@ -77,15 +80,15 @@ function updateSelection() {
   if (unknown) size = bytes ? `至少 ${size}（${unknown} 项大小待获取）` : "大小待获取";
   const summary = `已选 ${selected.length} 个文件 · ${size}`;
   if ($("selection-total").textContent !== summary) $("selection-total").textContent = summary;
-  $("download-selected").disabled = busy || !selected.length;
+  $button("download-selected").disabled = busy || !selected.length;
 }
 
 async function act(operation) {
   if (busy) return;
   busy = true;
-  $("download-selected").disabled = true;
-  $("open-player").disabled = true;
-  $("scan").disabled = true;
+  $button("download-selected").disabled = true;
+  $button("open-player").disabled = true;
+  $button("scan").disabled = true;
   try {
     const result = await operation();
     if (result?.media) render(result);
@@ -94,16 +97,16 @@ async function act(operation) {
     notice(error.message, true);
   } finally {
     busy = false;
-    $("scan").disabled = false;
+    $button("scan").disabled = false;
     updateSelection();
-    $("open-player").disabled = (state?.media?.length || 0) < 1;
+    $button("open-player").disabled = (state?.media?.length || 0) < 1;
   }
 }
 
 async function persistTitle() {
   if (savingTitle) await savingTitle;
   if (!titleDirty) return;
-  const value = $("course-name").value;
+  const value = $input("course-name").value;
   titleDirty = false;
   savingTitle = send("SET_TITLE", { value }).then(render).finally(() => { savingTitle = null; });
   await savingTitle;
@@ -139,11 +142,11 @@ function updateProgress(card, media) {
 }
 
 function makeCard(key) {
-  const card = document.importNode($("media-template").content.firstElementChild, true);
+  const card = /** @type {any} */ (document.importNode($template("media-template").content.firstElementChild, true));
   card.dataset.key = key;
   const check = card.querySelector(".file-check");
   check.checked = includeNewFiles;
-  check.addEventListener("change", () => { updateSelection(); includeNewFiles = $("select-all").checked; });
+  check.addEventListener("change", () => { updateSelection(); includeNewFiles = $input("select-all").checked; });
   const details = card.querySelector(".file-details");
   const more = card.querySelector(".file-tools");
   details.id = "file-details-" + ++nextCardId;
@@ -207,14 +210,14 @@ function render(next) {
   $("unsupported").hidden = next.supported;
   syncPolling();
   if (!next.supported) return;
-  if (!titleDirty && document.activeElement !== $("course-name")) $("course-name").value = next.courseTitle;
+  if (!titleDirty && document.activeElement !== $("course-name")) $input("course-name").value = next.courseTitle;
   $("course-name").title = next.courseTitle;
-  $("save-as").checked = !!next.options.saveAs;
+  $input("save-as").checked = !!next.options.saveAs;
   const summary = next.media.length === 1 ? "已识别 1 路（单画面看课；若有双路请先分别播放）" :
     next.media.length ? `已识别 ${next.media.length} 路画面` : "等待回放视频加载";
   if ($("summary").textContent !== summary) $("summary").textContent = summary;
   $("empty").hidden = next.media.length > 0;
-  $("open-player").disabled = busy || next.media.length < 1;
+  $button("open-player").disabled = busy || next.media.length < 1;
   const openLabel = $("open-player-label");
   if (openLabel) openLabel.textContent = next.media.length === 1 ? "单画面看课" : "同步看课";
   void refreshPlaylistChip(next.liveId || "");
@@ -246,7 +249,7 @@ function render(next) {
 $("course-name").addEventListener("input", () => { titleDirty = true; });
 $("course-name").addEventListener("change", () => { void persistTitle().catch((error) => notice(error.message, true)); });
 $("save-as").addEventListener("change", () => {
-  savingOptions = send("SET_OPTIONS", { saveAs: $("save-as").checked });
+  savingOptions = send("SET_OPTIONS", { saveAs: $input("save-as").checked });
   savingOptions.catch((error) => notice(error.message, true));
 });
 async function scanPage() {
@@ -262,7 +265,7 @@ async function scanPage() {
 }
 $("scan").addEventListener("click", () => { void act(async () => { await persistTitle(); return scanPage(); }); });
 $("select-all").addEventListener("change", () => {
-  includeNewFiles = $("select-all").checked;
+  includeNewFiles = $input("select-all").checked;
   for (const card of cards.values()) card.querySelector(".file-check").checked = includeNewFiles;
   updateSelection();
 });

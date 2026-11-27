@@ -86,6 +86,11 @@ export function normalizePlayerPrefs(raw) {
   };
 }
 
+/**
+ * @param {any} existing
+ * @param {Record<string, any>} [patch]
+ * @param {number} [now]
+ */
 export function mergePlayerPrefs(existing, patch = {}, now = Date.now()) {
   const next = normalizePlayerPrefs(existing);
   if (!patch || typeof patch !== "object") return next;

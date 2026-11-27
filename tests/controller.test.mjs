@@ -235,3 +235,18 @@ test("independent player falls back to authenticated subtitle fetch for its init
   assert.equal(sub.ok, true);
   assert.match(sub.text, /兜底字幕内容/);
 });
+
+test("prunes expired player session records when opening a new player", async () => {
+  const { api, session } = createApi();
+  const staleId = "00000000-0000-4000-8000-000000000001";
+  const freshId = "00000000-0000-4000-8000-000000000002";
+  session[`player:${staleId}`] = { createdAt: Date.now() - 25 * 60 * 60 * 1000, media: [] };
+  session[`player:${freshId}`] = { createdAt: Date.now() - 1000, media: [] };
+
+  const controller = createController(api);
+  await controller.dispatch({ type: "PAGE_SNAPSHOT", snapshot }, pageSender);
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+
+  assert.equal(session[`player:${staleId}`], undefined);
+  assert.ok(session[`player:${freshId}`]);
+});

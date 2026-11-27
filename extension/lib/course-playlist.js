@@ -120,6 +120,38 @@ export function extractWorkDetailId(html = "") {
   return "";
 }
 
+export function parsePlaylistResponseText(rawText = "") {
+  const text = String(rawText || "").trim();
+  if (!text) return { ok: false, error: "未获取到课程目录。" };
+  if (text.includes("请先登录") || text.startsWith("<")) {
+    return { ok: false, loginRequired: true, error: "西电智课登录已过期，请先刷新原回放页并重新登录。" };
+  }
+  try {
+    const items = JSON.parse(text);
+    return Array.isArray(items) ? { ok: true, items } : { ok: false, error: "课程目录响应格式异常。" };
+  } catch {
+    return { ok: false, error: "课程目录响应格式异常。" };
+  }
+}
+
+export function parseSubtitleResponseText(rawText = "") {
+  let text = String(rawText || "").replace(/^\ufeff/, "").trim();
+  const hasTiming = /^\s*(?:\d+:)?\d{2}:\d{2}[.,]\d{3}\s+-->/m;
+  if (text.startsWith("{") || text.startsWith('"') || text.startsWith("[")) {
+    let inline = "";
+    try {
+      JSON.parse(text, (_, value) => {
+        if (typeof value === "string" && !inline && hasTiming.test(value)) inline = value;
+        return value;
+      });
+    } catch { /* ignore malformed JSON */ }
+    if (inline) text = inline;
+  }
+  if (hasTiming.test(text)) return { text };
+  if (/^\s*</.test(text) || text.includes("请先登录")) return { failed: true };
+  return { failed: false };
+}
+
 export function parsePlayVideoHtml(html, liveId = "") {
   if (typeof html !== "string" || !html.trim()) {
     return { ok: false, reason: "empty", error: "未获取到该课次的视频信息，请重试。" };

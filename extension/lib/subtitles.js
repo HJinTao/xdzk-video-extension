@@ -6,6 +6,7 @@ function timestamp(seconds) {
   return `${pad(Math.floor(ms / 3600000))}:${pad(Math.floor(ms / 60000) % 60)}:${pad(Math.floor(ms / 1000) % 60)}.${String(ms % 1000).padStart(3, "0")}`;
 }
 
+/** @param {{ text?: string, cues?: Array<{ startTime: number, endTime: number, text: string }> }} [input] */
 export function toWebVtt({ text, cues } = {}) {
   if (cues?.length) {
     text = cues.map((cue) => `${timestamp(cue.startTime)} --> ${timestamp(cue.endTime)}\n${cue.text}`).join("\n\n");
@@ -18,6 +19,12 @@ export function toWebVtt({ text, cues } = {}) {
 
 // One control belongs to one video, so native seeking, speed and fullscreen all
 // use that video's own clock, including when the two cameras have an offset.
+/**
+ * @param {HTMLElement} container
+ * @param {HTMLVideoElement} video
+ * @param {(key: string) => Promise<any>} readCourse
+ * @param {(track: TextTrack | null) => void} [onTrackChange]
+ */
 export function bindSubtitles(container, video, readCourse, onTrackChange = () => {}) {
   const doc = container.ownerDocument;
   const view = doc.defaultView;
@@ -81,7 +88,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
       loading = false;
       if (mode === "file") {
         local = data;
-        let option = select.querySelector('[value="file"]');
+        let option = /** @type {HTMLOptionElement | null} */ (select.querySelector('[value="file"]'));
         if (!option) { option = doc.createElement("option"); option.value = "file"; select.append(option); }
         option.textContent = data.label;
       } else course = data;
