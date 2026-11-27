@@ -84,14 +84,14 @@
             <div id="speed-control" class="speed-control" data-select-id="rate"></div>
             <div class="option-toggles">
               <button id="toggle-captions" type="button" aria-label="双路字幕" aria-pressed="true" disabled>双路字幕 <span id="caption-state">读取中</span></button>
-              <label id="auto-next-wrap" class="auto-next-option" hidden><input id="auto-next" type="checkbox" checked><span>自动连播</span></label>
+              <label id="auto-next-wrap" class="auto-next-option ui-switch" hidden><input id="auto-next" type="checkbox" checked><span>自动连播</span></label>
             </div>
           </div>
           <p id="caption-hint" hidden>暂无可用字幕，可在「字幕复习」中导入 SRT 或 VTT。</p>
         </section>
         <div class="player-foot">
           <details class="source-settings">
-            <summary>视频源与时间校准</summary>
+            <summary><svg viewBox="0 0 24 24" class="icon disclosure-chevron" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><span>视频源与时间校准</span></summary>
             <div class="settings-grid">
               <label>画面 1 视频源<select id="source-0"></select></label>
               <label id="source-1-wrap">画面 2 视频源<select id="source-1"></select></label>
@@ -146,8 +146,11 @@
         <p id="shared-caption-note" hidden></p>
         <div class="transcript-tools" hidden>
           <label for="cue-search">搜索字幕</label>
-          <input id="cue-search" type="search" autocomplete="off" placeholder="输入关键词或时间">
-          <div class="cue-summary"><span id="cue-count" role="status"></span><label><input id="cue-follow" type="checkbox" checked>跟随播放</label></div>
+          <div class="search-field">
+            <svg viewBox="0 0 24 24" class="icon search-icon" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="cue-search" type="search" autocomplete="off" placeholder="输入关键词或时间">
+          </div>
+          <div class="cue-summary"><span id="cue-count" role="status"></span><label class="ui-switch cue-follow-option"><input id="cue-follow" type="checkbox" checked><span>跟随播放</span></label></div>
         </div>
         <p id="cue-empty">选择课程字幕，或导入 SRT / VTT 文件。</p>
         <ol id="cue-list" aria-label="字幕时间和内容" hidden></ol>

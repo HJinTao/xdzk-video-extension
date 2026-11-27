@@ -1,3 +1,5 @@
+import { enhanceSelect } from "./custom-select.js";
+
 const timingLine = /^((?:\d+:)?\d{2}:\d{2})[.,](\d{3})[ \t]+-->[ \t]+((?:\d+:)?\d{2}:\d{2})[.,](\d{3})(?=[ \t]|$)/gm;
 
 function timestamp(seconds) {
@@ -31,9 +33,10 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
   container.innerHTML = `<label>字幕 <select class="subtitle-mode"><option value="off">关闭</option><option value="course">课程字幕</option></select></label>
     <button type="button" class="subtitle-import">导入字幕</button><input type="file" accept=".srt,.vtt" hidden>
     <small class="subtitle-status" role="status" hidden></small>`;
-  const select = container.querySelector("select");
-  const input = container.querySelector("input");
-  const status = container.querySelector("small");
+  const select = /** @type {HTMLSelectElement} */ (container.querySelector("select"));
+  const selectUi = enhanceSelect(select);
+  const input = /** @type {HTMLInputElement} */ (container.querySelector("input"));
+  const status = /** @type {HTMLElement} */ (container.querySelector("small"));
   let key = "";
   let revision = 0;
   let tried = false;
@@ -67,6 +70,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     remove(pending);
     pending = null;
     select.value = selectedTrack() ? active.mode : "off";
+    selectUi.sync();
     notify(text);
     onTrackChange(selectedTrack());
   }
@@ -94,6 +98,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
       } else course = data;
       element.track.mode = display ? "showing" : "hidden";
       select.value = mode;
+      selectUi.sync();
       notify();
       onTrackChange(element.track);
     });
@@ -120,7 +125,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     } catch (error) { if (revision === version) fail(error.message); }
   }
   select.addEventListener("change", selectTrack);
-  container.querySelector("button").addEventListener("click", () => input.click());
+  container.querySelector(".subtitle-import").addEventListener("click", () => input.click());
   input.addEventListener("change", async () => {
     const file = input.files[0];
     input.value = "";
@@ -139,6 +144,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     if (active && !pending && status.hidden) {
       const track = selectedTrack();
       select.value = track ? active.mode : "off";
+      selectUi.sync();
       onTrackChange(track);
     }
   });
@@ -170,6 +176,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
       active = course = local = null;
       select.querySelector('[value="file"]')?.remove();
       select.value = "off";
+      selectUi.sync();
       onTrackChange(null);
     }
   };

@@ -13,6 +13,7 @@ import { buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPre
 import { bindPlaylistPanel } from "../extension/lib/playlist-panel.js";
 import { bindPlayerShortcuts } from "../extension/lib/player-shortcuts.js";
 import { canTriggerAutoRefresh, refreshFailureActions, renderMessageBar } from "../extension/lib/source-recovery.js";
+import { enhanceSelect, enhanceSegmentedSelect } from "../extension/lib/custom-select.js";
 import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/player.html", import.meta.url), "utf8");
@@ -20,7 +21,7 @@ const code = (await readFile(new URL("../extension/player.js", import.meta.url),
 const flush = () => new Promise((done) => setTimeout(done, 15));
 async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), playlistResult, onMessage, prepareMedia } = {}) {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref, bindPlaylistPanel, bindPlayerShortcuts, canTriggerAutoRefresh, refreshFailureActions, renderMessageBar, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref, bindPlaylistPanel, bindPlayerShortcuts, canTriggerAutoRefresh, refreshFailureActions, renderMessageBar, enhanceSelect, enhanceSegmentedSelect, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   const captionRequests = [];
   dom.window.chrome = { runtime: { async sendMessage(message) {
@@ -717,4 +718,61 @@ test("player degrades cleanly to single-stream mode and transitions seamlessly b
   assert.equal(videos[1].getAttribute("src"), null);
   assert.equal(videos[0].paused, false);
   assert.match(videos[0].src, /CloudIPC-203-ppt/);
+});
+
+test("custom dropdowns, segmented controls, speed popover and timeline progress stay synchronized", async (t) => {
+  const lessons = [
+    { liveId: "301", index: 1, title: "第 1 讲", shortDate: "09-07", timeRange: "08:30–10:05", available: true },
+    { liveId: "302", index: 2, title: "第 2 讲", shortDate: "09-09", timeRange: "08:30–10:05", available: true }
+  ];
+  const progress = {
+    "301": { liveId: "301", courseKey: "code:CS301", time: 120, duration: 120, ratio: 1, status: "watched" }
+  };
+  const { dom, document, videos } = await page({
+    labels: ["教室", "课件"],
+    playlistResult: { ok: true, supported: true, courseKey: "code:CS301", courseTitle: "操作系统", currentLiveId: "301", lessons, progress, prefs: { autoPlayNext: true } }
+  });
+  t.after(() => close(dom));
+
+  // Timeline progress CSS custom property updates when seeking.
+  const timeline = document.querySelector("#timeline");
+  timeline.value = "60";
+  timeline.dispatchEvent(new dom.window.Event("input"));
+  assert.equal(timeline.style.getPropertyValue("--progress"), "50%");
+
+  // Speed popover opens on trigger click, selects preset pill, updates videos and closes.
+  const speedTrigger = document.querySelector("#speed-control .speed-trigger");
+  const speedPopover = document.querySelector("#speed-control .speed-popover");
+  assert.equal(speedPopover.hidden, true);
+  speedTrigger.click();
+  assert.equal(speedPopover.hidden, false);
+  const preset2x = document.querySelector('#speed-control .speed-preset[data-rate="2"]');
+  preset2x.click();
+  assert.equal(speedPopover.hidden, true);
+  assert.deepEqual(videos.map((v) => v.playbackRate), [2, 2]);
+  assert.equal(document.querySelector("#speed-control .speed-trigger-value").textContent, "2×");
+
+  // Playlist filter is enhanced into segmented pill buttons synced with #playlist-filter.
+  document.querySelector("#toggle-playlist").click();
+  const unwatchedBtn = document.querySelector('#playlist-panel .ui-segmented-btn[data-value="unwatched"]');
+  assert.ok(unwatchedBtn);
+  unwatchedBtn.click();
+  assert.equal(document.querySelector("#playlist-filter").value, "unwatched");
+  assert.equal(document.querySelectorAll("#playlist-list .playlist-item").length, 1);
+
+  // Review source is enhanced into segmented buttons synced with #review-source.
+  document.querySelector("#toggle-review").click();
+  const reviewBtn0 = document.querySelector('#review .ui-segmented-btn[data-value="0"]');
+  assert.equal(reviewBtn0.textContent, "教室");
+  reviewBtn0.click();
+  assert.equal(document.querySelector("#review-source").value, "0");
+
+  // Source dropdown uses custom floating menu synced with #source-0 and closes on Escape.
+  const source0Ui = document.querySelector("#source-0").closest(".ui-select");
+  const sourceTrigger = source0Ui.querySelector(".ui-select-trigger");
+  const sourceMenu = source0Ui.querySelector(".ui-select-menu");
+  sourceTrigger.click();
+  assert.equal(sourceMenu.hidden, false);
+  sourceTrigger.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(sourceMenu.hidden, true);
 });

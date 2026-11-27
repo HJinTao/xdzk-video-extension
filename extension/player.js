@@ -10,6 +10,7 @@ import { buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPre
 import { bindPlaylistPanel } from "./lib/playlist-panel.js";
 import { bindPlayerShortcuts } from "./lib/player-shortcuts.js";
 import { canTriggerAutoRefresh, refreshFailureActions, renderMessageBar } from "./lib/source-recovery.js";
+import { enhanceSelect, enhanceSegmentedSelect } from "./lib/custom-select.js";
 
 const $ = (id) => document.getElementById(id);
 const videos = [/** @type {HTMLVideoElement} */ ($("video-0")), /** @type {HTMLVideoElement} */ ($("video-1"))];
@@ -146,6 +147,11 @@ const subtitles = videos.map((video, index) => bindSubtitles($("subtitles-" + in
 }, refreshCaptions));
 const updateCaptionPair = bindPairedSubtitles(videos, subtitles);
 document.querySelectorAll('.subtitle-mode option[value="off"]').forEach((option) => { option.textContent = "跟随另一路"; });
+const sourceSelectUis = [
+  enhanceSelect(/** @type {HTMLSelectElement} */ ($("source-0")), { placement: "top" }),
+  enhanceSelect(/** @type {HTMLSelectElement} */ ($("source-1")), { placement: "top" })
+];
+const reviewSourceUi = enhanceSegmentedSelect(/** @type {HTMLSelectElement} */ ($("review-source")));
 
 function applyGlobalPrefs(rawPrefs) {
   playerPrefs = normalizePlayerPrefs(rawPrefs);
@@ -188,6 +194,7 @@ function setPrimary(index) {
 function selectReview(index) {
   reviewIndex = singleMode ? 0 : index;
   /** @type {HTMLSelectElement} */ ($("review-source")).value = String(reviewIndex);
+  reviewSourceUi.sync();
   document.querySelectorAll("[data-track-panel]").forEach((panel) => {
     /** @type {HTMLElement} */ (panel).hidden = Number(/** @type {HTMLElement} */ (panel).dataset.trackPanel) !== reviewIndex;
   });
@@ -205,7 +212,7 @@ function showReview(open) {
   if (open) {
     selectReview(openedReview ? reviewIndex : primary);
     openedReview = true;
-    $("review-source").focus();
+    reviewSourceUi.focus();
     transcript.followCurrent();
   } else {
     $("toggle-review").focus();
@@ -267,6 +274,12 @@ function applyPendingStart(start) {
   if (start.autoplay) void engine.play();
 }
 
+function syncTimelineTrack(value, min, max) {
+  const span = max - min;
+  const pct = span > 0 ? Math.max(0, Math.min(100, ((value - min) / span) * 100)) : 0;
+  /** @type {HTMLInputElement} */ ($("timeline")).style.setProperty("--progress", `${pct}%`);
+}
+
 function stateChanged(state) {
   const ready = !!state.range;
   for (const name of ["play", "back", "forward", "timeline"]) {
@@ -288,7 +301,10 @@ function stateChanged(state) {
   if (ready) {
     timeline.min = String(state.range.start);
     timeline.max = String(state.range.end);
-    if (!editingTimeline) timeline.value = String(state.time);
+    if (!editingTimeline) {
+      timeline.value = String(state.time);
+      syncTimelineTrack(state.time, state.range.start, state.range.end);
+    }
     $("duration").textContent = formatClock(state.range.end);
     if (state.playing) {
       playlist.cancelCountdown();
@@ -296,7 +312,10 @@ function stateChanged(state) {
     } else if (wasPlaying) {
       void persistProgress({ force: true });
     }
-  } else { $("duration").textContent = "--:--"; }
+  } else {
+    $("duration").textContent = "--:--";
+    syncTimelineTrack(0, 0, 1);
+  }
   wasPlaying = !!state.playing;
   $("current").textContent = formatClock(editingTimeline ? Number(timeline.value) : state.time);
   speedControl.set(state.rate);
@@ -367,6 +386,7 @@ function setScreenMode(single) {
   const reviewSelect = /** @type {HTMLSelectElement} */ ($("review-source"));
   if (reviewSelect.options[1]) reviewSelect.options[1].hidden = single;
   reviewSelect.disabled = single;
+  reviewSourceUi.sync();
 }
 
 function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, autoplay = false } = {}) {
@@ -392,6 +412,7 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
     $("screen-role-0").textContent = "单画面";
     $("audio-name-0").textContent = name;
     /** @type {HTMLSelectElement} */ ($("review-source")).options[0].textContent = name;
+    reviewSourceUi.sync();
     changingSources = true;
     subtitles[0].setSource(valid ? item.key : "");
     subtitles[1].setSource("");
@@ -441,6 +462,7 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
     $("audio-name-" + index).textContent = name;
     /** @type {HTMLSelectElement} */ ($("review-source")).options[index].textContent = name;
   });
+  reviewSourceUi.sync();
   changingSources = true;
   subtitles.forEach((control, index) => control.setSource(valid ? pair[index].key : ""));
   changingSources = false;
@@ -508,7 +530,9 @@ function populateSources(nextMedia, { keepSelection = false } = {}) {
     }));
     const fallback = media[index]?.key || media[0]?.key || "";
     select.value = keepSelection && media.some((item) => item.key === previous[index]) ? previous[index] : fallback;
+    sourceSelectUis[index].sync();
   }
+  if (isSingle) sourceSelectUis[1].sync();
   if (wasSingle !== isSingle) return false;
   return isSingle ? previous[0] === /** @type {HTMLSelectElement} */ ($("source-0")).value : previous.every((key, index) => key === /** @type {HTMLSelectElement} */ ($("source-" + index)).value);
 }
@@ -650,7 +674,12 @@ $("play").addEventListener("click", togglePlayback);
 $("back").addEventListener("click", () => { playlist.cancelCountdown(); engine?.seek(engine.time() - 10); });
 $("forward").addEventListener("click", () => { playlist.cancelCountdown(); engine?.seek(engine.time() + 10); });
 const timelineInput = /** @type {HTMLInputElement} */ ($("timeline"));
-timelineInput.addEventListener("input", () => { editingTimeline = true; $("current").textContent = formatClock(Number(timelineInput.value)); });
+timelineInput.addEventListener("input", () => {
+  editingTimeline = true;
+  const val = Number(timelineInput.value);
+  $("current").textContent = formatClock(val);
+  syncTimelineTrack(val, Number(timelineInput.min), Number(timelineInput.max));
+});
 timelineInput.addEventListener("change", () => { editingTimeline = false; playlist.cancelCountdown(); engine?.seek(Number(timelineInput.value)); });
 timelineInput.addEventListener("blur", () => { if (editingTimeline) { editingTimeline = false; engine?.seek(Number(timelineInput.value)); } });
 const offsetInput = /** @type {HTMLInputElement} */ ($("offset"));
@@ -725,6 +754,9 @@ document.addEventListener("fullscreenchange", () => {
 window.addEventListener("pagehide", () => {
   unbindShortcuts();
   playlist.destroy();
+  speedControl.destroy();
+  sourceSelectUis.forEach((ui) => ui.destroy());
+  reviewSourceUi.destroy();
   flushVolumeSave();
   void persistProgress({ force: true });
   engine?.destroy();
