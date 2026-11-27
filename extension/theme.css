@@ -61,6 +61,93 @@ input { accent-color: var(--accent); }
   flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor;
   stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
 }
+
+/* Unified custom select dropdown */
+.ui-select { position: relative; display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.ui-select-trigger {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 6px;
+  width: 100%; min-width: 0; min-height: 32px; padding: 4px 9px 4px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--paper); color: var(--ink); font: inherit; font-weight: 520; text-align: start;
+  transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+}
+.ui-select-trigger:hover:enabled { background: var(--tint); border-color: var(--strong-line); }
+.ui-select[data-open="true"] .ui-select-trigger {
+  border-color: var(--accent); background: var(--paper);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action) 14%, transparent);
+}
+.ui-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-select-chevron {
+  width: 14px; height: 14px; color: var(--muted); flex: none;
+  transition: transform 160ms var(--ease-out), color 150ms var(--ease-out);
+}
+.ui-select[data-open="true"] .ui-select-chevron { transform: rotate(180deg); color: var(--accent); }
+.ui-select-menu {
+  position: absolute; top: calc(100% + 5px); left: 0; z-index: 60;
+  min-width: max(100%, 132px); max-width: min(260px, 82vw); max-height: 240px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--paper); box-shadow: 0 10px 28px -8px rgba(20, 36, 62, 0.2), 0 2px 6px rgba(20, 36, 62, 0.06);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ui-select[data-align="right"] .ui-select-menu { left: auto; right: 0; }
+.ui-select[data-placement="top"] .ui-select-menu { top: auto; bottom: calc(100% + 5px); }
+.ui-select-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; min-height: 30px; padding: 5px 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--ink); font: inherit; font-size: 13px; font-weight: 480; text-align: start;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.ui-select-option:hover:enabled, .ui-select-option.is-active { background: var(--wash); border-color: transparent; }
+.ui-select-option[aria-selected="true"] { background: var(--tint); color: var(--accent); font-weight: 620; }
+.ui-select-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-select-check { width: 14px; height: 14px; color: var(--accent); opacity: 0; flex: none; }
+.ui-select-option[aria-selected="true"] .ui-select-check { opacity: 1; }
+
+/* Unified inline segmented pill bar */
+.ui-segmented-wrap { display: inline-flex; min-width: 0; max-width: 100%; }
+.ui-segmented {
+  display: inline-flex; align-items: center; gap: 3px; width: 100%; min-width: 0;
+  padding: 2px; border-radius: 8px; background: var(--wash); border: 1px solid var(--line);
+}
+.ui-segmented-btn {
+  flex: 1; min-width: 0; min-height: 28px; padding: 3px 10px;
+  border: 0; border-radius: 6px; background: transparent; color: var(--muted);
+  font: inherit; font-size: 12.5px; font-weight: 540; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out), box-shadow 140ms var(--ease-out);
+}
+.ui-segmented-btn:hover:enabled { color: var(--ink); background: color-mix(in srgb, var(--paper) 65%, transparent); }
+.ui-segmented-btn[aria-checked="true"] {
+  background: var(--paper); color: var(--accent); font-weight: 620;
+  box-shadow: 0 1px 2px rgba(20, 36, 62, 0.08), 0 0 0 1px var(--line);
+}
+
+/* Unified pill toggle switch */
+.ui-switch {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  user-select: none; color: var(--ink); font-size: 13px;
+}
+.ui-switch input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+  position: relative; width: 32px; height: 18px; border-radius: 999px;
+  background: var(--line); border: 1px solid var(--strong-line); cursor: pointer;
+  transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out);
+}
+.ui-switch input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--paper); box-shadow: 0 1px 2px rgba(18, 27, 42, 0.2);
+  transition: transform 160ms var(--ease-out);
+}
+.ui-switch input[type="checkbox"]:checked { background: var(--action); border-color: var(--action); }
+.ui-switch input[type="checkbox"]:checked::after { transform: translateX(14px); }
+.ui-switch:hover input[type="checkbox"]:not(:checked) { border-color: var(--accent); }
+
+/* Clean numeric inputs without native spinner arrows */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

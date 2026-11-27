@@ -160,6 +160,7 @@ function makeCard(key) {
   card.subtitles = bindSubtitles(card.querySelector(".subtitles"), video, (key) => send("GET_SUBTITLES", { key }));
   card.subtitles.setSource(key);
   const speed = bindPlaybackSpeed(card.querySelector(".speed-control"), (value) => { video.defaultPlaybackRate = value; video.playbackRate = value; });
+  card.speed = speed;
   video.addEventListener("ratechange", () => speed.set(video.playbackRate));
   const name = card.querySelector(".channel-name");
   name.addEventListener("change", () => {
@@ -222,7 +223,7 @@ function render(next) {
   if (openLabel) openLabel.textContent = next.media.length === 1 ? "单画面看课" : "同步看课";
   void refreshPlaylistChip(next.liveId || "");
   const keys = new Set(next.media.map((media) => media.key));
-  for (const [key, card] of cards) if (!keys.has(key)) { card.subtitles.setSource(""); card.player?.destroy(); card.remove(); cards.delete(key); }
+  for (const [key, card] of cards) if (!keys.has(key)) { card.subtitles.setSource(""); card.speed?.destroy(); card.player?.destroy(); card.remove(); cards.delete(key); }
   if (!cards.size) includeNewFiles = true;
   next.media.forEach((media, index) => {
     let card = cards.get(media.key);
@@ -320,6 +321,6 @@ async function init() {
 window.addEventListener("pagehide", () => {
   if (poll) { clearInterval(poll); poll = null; }
   if (hasStorageEvents) chrome.storage.onChanged.removeListener(handleStorageChange);
-  for (const card of cards.values()) card.player?.destroy();
+  for (const card of cards.values()) { card.speed?.destroy(); card.player?.destroy(); }
 });
 init().catch((error) => notice(error.message, true));

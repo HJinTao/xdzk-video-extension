@@ -1,5 +1,6 @@
 import { formatClock } from "./media.js";
 import { computeWatchStatus } from "./watch-progress.js";
+import { enhanceSegmentedSelect } from "./custom-select.js";
 
 const AUTO_NEXT_SECONDS = 5;
 
@@ -23,6 +24,8 @@ export function bindPlaylistPanel(doc, {
   onLayoutChange
 }) {
   const $ = (id) => doc.getElementById(id);
+  const filterSelect = /** @type {HTMLSelectElement} */ ($("playlist-filter"));
+  const filterUi = enhanceSegmentedSelect(filterSelect);
   let lessons = [];
   let progressMap = {};
   let currentLiveId = "";
@@ -183,7 +186,7 @@ export function bindPlaylistPanel(doc, {
     onLayoutChange();
     if (open) {
       scrollCurrentIntoView();
-      if (focus) $("playlist-filter").focus();
+      if (focus) filterUi.focus();
     } else if (focus) {
       $("toggle-playlist").focus();
     }
@@ -242,7 +245,8 @@ export function bindPlaylistPanel(doc, {
   $("playlist-locate").addEventListener("click", () => {
     if (filter !== "all") {
       filter = "all";
-      /** @type {HTMLSelectElement} */ ($("playlist-filter")).value = "all";
+      filterSelect.value = "all";
+      filterUi.sync();
       render();
     }
     scrollCurrentIntoView();
@@ -278,6 +282,9 @@ export function bindPlaylistPanel(doc, {
     scrollCurrentIntoView,
     startCountdown,
     cancelCountdown,
-    destroy: cancelCountdown
+    destroy() {
+      cancelCountdown();
+      filterUi.destroy();
+    }
   };
 }
