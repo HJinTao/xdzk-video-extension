@@ -9,6 +9,7 @@ import { bindPairedSubtitles } from "../extension/lib/paired-subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
 import { bindTranscript } from "../extension/lib/transcript.js";
 import { computeWatchStatus, resumeTimeFor } from "../extension/lib/watch-progress.js";
+import { buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref } from "../extension/lib/player-prefs.js";
 import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/player.html", import.meta.url), "utf8");
@@ -16,7 +17,7 @@ const code = (await readFile(new URL("../extension/player.js", import.meta.url),
 const flush = () => new Promise((done) => setTimeout(done, 15));
 async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), playlistResult, onMessage, prepareMedia } = {}) {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   const captionRequests = [];
   dom.window.chrome = { runtime: { async sendMessage(message) {
@@ -545,4 +546,92 @@ test("initial resume and lesson switch autoplay wait until both videos finish lo
   await flush();
   assert.deepEqual(videos.map((v) => v.currentTime), [30, 30]);
   assert.ok(videos.every((v) => !v.paused));
+});
+
+test("restores and persists layered global and per-course player preferences", async (t) => {
+  const savedPatches = [];
+  const storedPrefs = {
+    autoPlayNext: false,
+    rate: 1.5,
+    volume: 0.6,
+    captionsEnabled: false,
+    audio: { mode: "channel", role: "classroom", index: 1 },
+    courses: {
+      "code:CS101": {
+        audio: { mode: "channel", role: "classroom", index: 0 },
+        offset: -2.5,
+        updatedAt: 1000
+      }
+    }
+  };
+  const lessons = [
+    { liveId: "101", index: 1, title: "第 1 讲", shortDate: "09-07", timeRange: "08:30–10:05", available: true }
+  ];
+  const { dom, document, videos } = await page({
+    // Put 教室 at index 0 and 课件 at index 1 to verify role-based audio resolution.
+    labels: ["教室", "课件"],
+    playlistResult: { ok: true, supported: true, courseKey: "code:CS101", courseTitle: "数据库系统", currentLiveId: "101", lessons, progress: {}, prefs: storedPrefs },
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        return {
+          ok: true,
+          courseTitle: "数据库系统",
+          currentLiveId: "101",
+          prefs: storedPrefs,
+          media: [
+            { key: mediaKey(mediaUrl("CloudIPC-101-cam")), label: "教室", url: mediaUrl("CloudIPC-101-cam") },
+            { key: mediaKey(mediaUrl("CloudIPC-101-ppt")), label: "课件", url: mediaUrl("CloudIPC-101-ppt") }
+          ]
+        };
+      }
+      if (message.type === "SET_PLAYER_PREFS") {
+        savedPatches.push(message);
+        return { ok: true, prefs: mergePlayerPrefs(storedPrefs, message) };
+      }
+    }
+  });
+  t.after(() => close(dom));
+
+  // Global prefs restored on boot: rate 1.5x, volume 0.6, captions off, autoPlayNext off.
+  assert.deepEqual(videos.map((v) => v.playbackRate), [1.5, 1.5]);
+  assert.deepEqual(videos.map((v) => v.volume), [0.6, 0.6]);
+  assert.equal(document.querySelector("#toggle-captions").getAttribute("aria-pressed"), "false");
+  assert.equal(document.querySelector("#auto-next").checked, false);
+
+  // Role-based audio matched "教室" at index 0, and course offset -2.5 applied once playlist returned courseKey.
+  assert.deepEqual(videos.map((v) => v.muted), [false, true]);
+  assert.equal(document.querySelector('input[name="audio"][value="0"]').checked, true);
+  assert.equal(document.querySelector("#offset").value, "-2.5");
+
+  // User interactions persist rate, captions, audio (with role + courseKey), offset, reset-offset, and volume.
+  const rateSelect = document.querySelector("#rate");
+  rateSelect.value = "2";
+  rateSelect.dispatchEvent(new dom.window.Event("change"));
+
+  document.querySelector("#toggle-captions").click();
+
+  const audio1 = document.querySelector('input[name="audio"][value="1"]');
+  audio1.checked = true;
+  audio1.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+  const offsetInput = document.querySelector("#offset");
+  offsetInput.value = "3.5";
+  offsetInput.dispatchEvent(new dom.window.Event("change"));
+
+  document.querySelector("#reset-offset").click();
+  assert.equal(offsetInput.value, "0");
+
+  document.body.dispatchEvent(new dom.window.KeyboardEvent("keydown", { code: "ArrowDown", bubbles: true, cancelable: true }));
+  assert.deepEqual(videos.map((v) => v.volume), [0.5, 0.5]);
+
+  // Flushing via pagehide immediately sends pending debounced volume.
+  dom.window.dispatchEvent(new dom.window.Event("pagehide"));
+  await flush();
+
+  assert.ok(savedPatches.some((p) => p.rate === 2));
+  assert.ok(savedPatches.some((p) => p.captionsEnabled === true));
+  assert.ok(savedPatches.some((p) => p.courseKey === "code:CS101" && p.audio?.mode === "channel" && p.audio?.role === "slide" && p.audio?.index === 1));
+  assert.ok(savedPatches.some((p) => p.courseKey === "code:CS101" && p.offset === 3.5));
+  assert.ok(savedPatches.some((p) => p.courseKey === "code:CS101" && p.offset === null));
+  assert.ok(savedPatches.some((p) => p.volume === 0.5));
 });

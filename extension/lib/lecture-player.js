@@ -4,14 +4,14 @@ import { PRESET_RATES } from "./playback-speed.js";
 Artplayer.PLAYBACK_RATE = [...PRESET_RATES];
 Artplayer.RECONNECT_TIME_MAX = 0; // The replay page supplies a fresh signed URL when requested.
 
-export function createLecturePlayer(video, url, { hotkey = true } = {}) {
+export function createLecturePlayer(video, url, { hotkey = true, volume = 1 } = {}) {
   const player = new Artplayer({
     container: video.parentElement,
     proxy: () => video,
     url,
     lang: "zh-cn",
     theme: "#88baff",
-    volume: 1,
+    volume,
     muted: video.muted,
     mutex: false,
     hotkey,

@@ -1,3 +1,5 @@
+import { mergePlayerPrefs, normalizePlayerPrefs } from "./player-prefs.js";
+
 export const WATCHED_RATIO = 0.9;
 export const MIN_WATCH_SECONDS = 5;
 export const RESUME_END_MARGIN = 10;
@@ -126,12 +128,11 @@ export function createProgressStore(storageArea) {
     }),
     getPrefs: () => chain.then(async () => {
       const stored = (await storageArea.get({ [PREFS_KEY]: {} }))[PREFS_KEY];
-      return { autoPlayNext: stored?.autoPlayNext !== false };
+      return normalizePlayerPrefs(stored);
     }),
     setPrefs: (patch = {}) => serialize(async () => {
       const stored = (await storageArea.get({ [PREFS_KEY]: {} }))[PREFS_KEY] || {};
-      const next = { autoPlayNext: stored.autoPlayNext !== false };
-      if (typeof patch.autoPlayNext === "boolean") next.autoPlayNext = patch.autoPlayNext;
+      const next = mergePlayerPrefs(stored, patch);
       await storageArea.set({ [PREFS_KEY]: next });
       return next;
     })

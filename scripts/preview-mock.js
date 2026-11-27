@@ -15,7 +15,7 @@
     "12771541": { liveId: "12771541", courseKey: "code:CS101", time: 5700, duration: 5700, ratio: 1, status: "watched", manual: false, updatedAt: Date.now() - 86400000 },
     "12771542": { liveId: "12771542", courseKey: "code:CS101", time: 2380, duration: 5700, ratio: 0.42, status: "watching", manual: false, updatedAt: Date.now() - 3600000 }
   };
-  const prefs = { autoPlayNext: true };
+  const prefs = { autoPlayNext: true, rate: 1, volume: 1, captionsEnabled: true, audio: null, courses: {} };
   let currentLiveId = "12771543";
   const makeMedia = (liveId) => [0, 1].map((index) => {
     const camera = `CloudIPC-demo-${liveId}-${index ? "b" : "a"}`;
@@ -60,6 +60,14 @@
         }
         if (message.type === "SET_PLAYER_PREFS") {
           if (typeof message.autoPlayNext === "boolean") prefs.autoPlayNext = message.autoPlayNext;
+          if (Number.isFinite(Number(message.rate))) prefs.rate = Number(message.rate);
+          if (Number.isFinite(Number(message.volume))) prefs.volume = Number(message.volume);
+          if (typeof message.captionsEnabled === "boolean") prefs.captionsEnabled = message.captionsEnabled;
+          if (message.audio !== undefined) prefs.audio = message.audio;
+          if (message.courseKey && (message.audio !== undefined || message.offset !== undefined)) {
+            prefs.courses[message.courseKey] = { ...(prefs.courses[message.courseKey] || {}), ...(message.audio !== undefined ? { audio: message.audio } : {}), ...(message.offset === null ? {} : message.offset !== undefined ? { offset: Number(message.offset) } : {}) };
+            if (message.offset === null) delete prefs.courses[message.courseKey].offset;
+          }
           return structuredClone({ ok: true, prefs });
         }
         if (message.type === "OPEN_PLAYER") { window.open("/player.html?id=demo", "_blank"); return { ok: true }; }

@@ -6,6 +6,7 @@ import { bindPlaybackSpeed } from "./lib/playback-speed.js";
 import { bindTranscript } from "./lib/transcript.js";
 import { formatClock } from "./lib/media.js";
 import { computeWatchStatus, resumeTimeFor } from "./lib/watch-progress.js";
+import { buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref } from "./lib/player-prefs.js";
 
 const $ = (id) => document.getElementById(id);
 const videos = [$("video-0"), $("video-1")];
@@ -25,6 +26,13 @@ let openedReview = false;
 let editingTimeline = false;
 let savedAudio = 0;
 let savedRate = 1;
+let savedVolume = 1;
+let playerPrefs = normalizePlayerPrefs();
+let userTouchedAudio = false;
+let userTouchedOffset = false;
+let syncingVolume = false;
+let volumeSaveTimer = null;
+let pendingVolumeSave = null;
 let currentLiveId = "";
 let courseKey = "";
 let lessons = [];
@@ -44,7 +52,69 @@ let countdownLeft = 0;
 let initialResumeApplied = false;
 let pendingStart = null;
 const players = [];
-const speedControl = bindPlaybackSpeed($("speed-control"), (value) => { savedRate = value; engine?.setRate(value); });
+
+function selectedPair() {
+  return [$("source-0").value, $("source-1").value].map((key) => media.find((item) => item.key === key));
+}
+
+function savePlayerPrefs(patch) {
+  playerPrefs = mergePlayerPrefs(playerPrefs, patch);
+  void chrome.runtime.sendMessage({ type: "SET_PLAYER_PREFS", ...patch }).catch(() => {});
+}
+
+function syncAudioRadios(value) {
+  document.querySelectorAll('input[name="audio"]').forEach((radio) => {
+    radio.checked = Number(radio.value) === value;
+  });
+}
+
+function applyVolume(value) {
+  const safe = Math.max(0, Math.min(1, Math.round(Number(value) * 100) / 100));
+  if (!Number.isFinite(safe)) return;
+  syncingVolume = true;
+  try {
+    videos.forEach((video) => {
+      if (Math.abs(video.volume - safe) >= 0.005) video.volume = safe;
+    });
+  } finally {
+    syncingVolume = false;
+  }
+}
+
+function flushVolumeSave() {
+  if (volumeSaveTimer) {
+    clearTimeout(volumeSaveTimer);
+    volumeSaveTimer = null;
+  }
+  if (pendingVolumeSave !== null) {
+    const value = pendingVolumeSave;
+    pendingVolumeSave = null;
+    savePlayerPrefs({ volume: value });
+  }
+}
+
+function scheduleVolumeSave(value) {
+  pendingVolumeSave = value;
+  if (volumeSaveTimer) clearTimeout(volumeSaveTimer);
+  volumeSaveTimer = setTimeout(flushVolumeSave, 200);
+}
+
+function applyGlobalPrefs(rawPrefs) {
+  playerPrefs = normalizePlayerPrefs(rawPrefs);
+  savedRate = playerPrefs.rate;
+  savedVolume = playerPrefs.volume;
+  captionsEnabled = playerPrefs.captionsEnabled;
+  autoPlayNext = playerPrefs.autoPlayNext;
+  $("auto-next").checked = autoPlayNext;
+  speedControl.set(savedRate);
+  applyVolume(savedVolume);
+}
+
+const speedControl = bindPlaybackSpeed($("speed-control"), (value) => {
+  savedRate = value;
+  engine?.setRate(value);
+  savePlayerPrefs({ rate: value });
+});
 const transcript = bindTranscript($("review"), (seconds) => {
   cancelCountdown();
   if (engine?.range()) engine.seek(seconds - (reviewClock === 1 ? engine.offset : 0));
@@ -431,7 +501,10 @@ function stateChanged(state) {
   wasPlaying = !!state.playing;
   $("current").textContent = formatClock(editingTimeline ? Number($("timeline").value) : state.time);
   speedControl.set(state.rate);
-  savedRate = state.rate;
+  if (Number.isFinite(state.rate) && state.rate !== savedRate) {
+    savedRate = state.rate;
+    savePlayerPrefs({ rate: state.rate });
+  }
   if (ready && pendingStart) {
     const start = pendingStart;
     pendingStart = null;
@@ -509,7 +582,7 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
   lastSavedTime = -1;
   engine?.destroy();
   engine = null;
-  const pair = [$("source-0").value, $("source-1").value].map((key) => media.find((item) => item.key === key));
+  const pair = selectedPair();
   const valid = pair.every(Boolean) && pair[0].key !== pair[1].key;
   for (const name of ["swap-views", "toggle-review", "toggle-captions"]) $(name).disabled = !valid;
   pair.forEach((item, index) => {
@@ -532,18 +605,25 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
   if (!preserve) {
     const slide = pair.findIndex((item) => /课件|幻灯|投屏|屏幕|桌面|PPT|slides?/i.test(item.label));
     setPrimary(slide < 0 ? 0 : slide);
+    if (!userTouchedAudio) {
+      savedAudio = resolveAudioPref(playerPrefs, courseKey, pair);
+      syncAudioRadios(savedAudio);
+    }
   }
   message();
   videos.forEach((video, index) => {
     if (players[index]) players[index].url = pair[index].url;
-    else players[index] = createLecturePlayer(video, pair[index].url, { hotkey: false });
+    else players[index] = createLecturePlayer(video, pair[index].url, { hotkey: false, volume: savedVolume });
     video.load();
   });
+  applyVolume(savedVolume);
   engine = new SyncPlayer(videos, { onState: stateChanged, onError: handleEngineError, onEnded: handlePlaybackEnded });
-  const offset = previousOffset ?? recordingOffset(pair[0].url, pair[1].url);
+  const savedCourseOffset = resolveOffsetPref(playerPrefs, courseKey);
+  const offset = previousOffset ?? (savedCourseOffset !== undefined ? savedCourseOffset : recordingOffset(pair[0].url, pair[1].url));
   $("offset").value = offset;
   engine.setOffset(offset);
   engine.setAudio(savedAudio);
+  syncAudioRadios(savedAudio);
   engine.setRate(rate);
   subtitles.forEach(control => control.ensureCourse());
   selectReview(openedReview ? reviewIndex : primary);
@@ -610,8 +690,9 @@ async function loadPlaylist({ showErrors = false } = {}) {
       return;
     }
     progressMap = result.progress || {};
-    if (typeof result.prefs?.autoPlayNext === "boolean") {
-      autoPlayNext = result.prefs.autoPlayNext;
+    if (result.prefs) {
+      playerPrefs = normalizePlayerPrefs(result.prefs);
+      autoPlayNext = playerPrefs.autoPlayNext;
       $("auto-next").checked = autoPlayNext;
     }
     if (!result.supported || !Array.isArray(result.lessons) || !result.lessons.length) {
@@ -620,6 +701,24 @@ async function loadPlaylist({ showErrors = false } = {}) {
       return;
     }
     courseKey = result.courseKey || "";
+    if (engine) {
+      const pair = selectedPair();
+      if (!userTouchedAudio && pair.every(Boolean)) {
+        const preferredAudio = resolveAudioPref(playerPrefs, courseKey, pair);
+        if (preferredAudio !== savedAudio) {
+          savedAudio = preferredAudio;
+          syncAudioRadios(savedAudio);
+          engine.setAudio(savedAudio);
+        }
+      }
+      if (!userTouchedOffset) {
+        const preferredOffset = resolveOffsetPref(playerPrefs, courseKey);
+        if (preferredOffset !== undefined && preferredOffset !== engine.offset) {
+          $("offset").value = preferredOffset;
+          engine.setOffset(preferredOffset);
+        }
+      }
+    }
     lessons = result.lessons;
     if (result.currentLiveId && !currentLiveId) currentLiveId = result.currentLiveId;
     if (result.courseTitle) {
@@ -654,6 +753,8 @@ async function load({ refresh = false } = {}) {
     if (!result?.ok) throw new Error(result?.error || "无法读取课程，请从扩展面板重新打开同步播放。");
     if (result.media.length < 2) throw new Error("至少需要两路视频。请回到原回放页面，播放两路画面并重新识别。");
     if (result.currentLiveId) currentLiveId = result.currentLiveId;
+    if (result.courseKey && !courseKey) courseKey = result.courseKey;
+    if (!refresh && result.prefs) applyGlobalPrefs(result.prefs);
     const samePair = populateSources(result.media, { keepSelection: true });
     $("course-title").textContent = result.courseTitle;
     document.title = `${result.courseTitle} · 专注看课`;
@@ -677,15 +778,46 @@ $("cancel-next").addEventListener("click", cancelCountdown);
 $("auto-next").addEventListener("change", () => {
   autoPlayNext = $("auto-next").checked;
   if (!autoPlayNext) cancelCountdown();
-  void chrome.runtime.sendMessage({ type: "SET_PLAYER_PREFS", autoPlayNext }).catch(() => {});
+  savePlayerPrefs({ autoPlayNext });
 });
 $("back").addEventListener("click", () => { cancelCountdown(); engine?.seek(engine.time() - 10); });
 $("forward").addEventListener("click", () => { cancelCountdown(); engine?.seek(engine.time() + 10); });
 $("timeline").addEventListener("input", () => { editingTimeline = true; $("current").textContent = formatClock(Number($("timeline").value)); });
 $("timeline").addEventListener("change", () => { editingTimeline = false; cancelCountdown(); engine?.seek(Number($("timeline").value)); });
 $("timeline").addEventListener("blur", () => { if (editingTimeline) { editingTimeline = false; engine?.seek(Number($("timeline").value)); } });
-$("offset").addEventListener("change", () => { if ($("offset").checkValidity()) engine?.setOffset(Number($("offset").value)); });
-document.querySelectorAll('input[name="audio"]').forEach((radio) => radio.addEventListener("change", () => { savedAudio = Number(radio.value); engine?.setAudio(savedAudio); }));
+$("offset").addEventListener("change", () => {
+  if (!$("offset").checkValidity()) return;
+  const value = Number($("offset").value);
+  userTouchedOffset = true;
+  engine?.setOffset(value);
+  if (courseKey) savePlayerPrefs({ courseKey, offset: value });
+});
+$("reset-offset")?.addEventListener("click", () => {
+  const pair = selectedPair();
+  const autoOffset = pair.every(Boolean) ? recordingOffset(pair[0].url, pair[1].url) : 0;
+  userTouchedOffset = false;
+  $("offset").value = autoOffset;
+  engine?.setOffset(autoOffset);
+  if (courseKey) savePlayerPrefs({ courseKey, offset: null });
+});
+document.querySelectorAll('input[name="audio"]').forEach((radio) => radio.addEventListener("change", () => {
+  userTouchedAudio = true;
+  savedAudio = Number(radio.value);
+  engine?.setAudio(savedAudio);
+  const audioPref = buildAudioPref(savedAudio, selectedPair());
+  if (audioPref) savePlayerPrefs({ audio: audioPref, ...(courseKey ? { courseKey } : {}) });
+}));
+videos.forEach((video, index) => {
+  video.addEventListener("volumechange", () => {
+    if (syncingVolume) return;
+    const next = Math.max(0, Math.min(1, Math.round(video.volume * 100) / 100));
+    if (Math.abs(next - savedVolume) < 0.005) return;
+    if (engine && engine.audio >= 0 && index !== engine.audio) return;
+    savedVolume = next;
+    applyVolume(savedVolume);
+    scheduleVolumeSave(savedVolume);
+  });
+});
 for (let index = 0; index < 2; index++) $("source-" + index).addEventListener("change", () => loadPair());
 $("refresh").addEventListener("click", () => { void load({ refresh: true }); });
 $("swap-views").addEventListener("click", () => setPrimary(1 - primary));
@@ -703,6 +835,7 @@ $("toggle-review").addEventListener("click", () => showReview($("review").hidden
 $("toggle-captions").addEventListener("click", () => {
   captionsEnabled = !captionsEnabled;
   refreshCaptions();
+  savePlayerPrefs({ captionsEnabled });
 });
 $("close-review").addEventListener("click", () => showReview(false));
 $("review-source").addEventListener("change", () => selectReview(Number($("review-source").value)));
@@ -743,7 +876,10 @@ document.addEventListener("keydown", (event) => {
     if (target instanceof Element && target.matches("button, a, summary")) return;
     event.preventDefault();
     const active = videos[engine.audio];
-    active.volume = Math.max(0, Math.min(1, Math.round((active.volume + (event.code === "ArrowUp" ? .1 : -.1)) * 10) / 10));
+    const nextVolume = Math.max(0, Math.min(1, Math.round((active.volume + (event.code === "ArrowUp" ? .1 : -.1)) * 10) / 10));
+    savedVolume = nextVolume;
+    applyVolume(savedVolume);
+    scheduleVolumeSave(savedVolume);
   }
 });
 
@@ -755,6 +891,7 @@ document.addEventListener("fullscreenchange", () => {
 
 window.addEventListener("pagehide", () => {
   cancelCountdown();
+  flushVolumeSave();
   void persistProgress({ force: true });
   engine?.destroy();
   changingSources = true;
