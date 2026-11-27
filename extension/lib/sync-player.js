@@ -25,12 +25,17 @@ export class SyncPlayer {
     this.generation = 0;
     this.destroyed = false;
     videos.forEach((video, index) => {
+      const onReady = () => {
+        if (this.isReady(index)) this.buffering.delete(index);
+        if (this.wantPlaying && this.buffering.size) this.holdReadyPeers();
+        this.resumeIfReady();
+        this.emit();
+      };
       this.listen(video, "seeking", () => this.onSeek(index));
       this.listen(video, "seeked", () => {
         if (video.seeking) return;
         delete this.expected[index].seek;
-        this.resumeIfReady();
-        this.emit();
+        onReady();
       });
       // Queued events report the element's current state. Only a change away
       // from the last commanded state is a new native play or pause.
@@ -51,13 +56,15 @@ export class SyncPlayer {
       });
       this.listen(video, "waiting", () => {
         // Chromium also sends waiting while it decodes an already buffered seek.
-        if (!this.wantPlaying || video.readyState >= 3 || isBufferedSeek(video)) return;
+        if (!this.wantPlaying || video.readyState >= 3 || isBufferedSeek(video) || this.shouldIgnorePeerWait(index)) return;
         this.buffering.add(index);
         this.generation += 1;
-        this.pauseElements();
+        this.holdReadyPeers();
         this.emit();
       });
-      this.listen(video, "canplay", () => { this.resumeIfReady(); this.emit(); });
+      this.listen(video, "canplay", onReady);
+      this.listen(video, "canplaythrough", onReady);
+      this.listen(video, "playing", onReady);
       this.listen(video, "loadedmetadata", () => { this.seek(this.time()); this.emit(); });
       this.listen(video, "durationchange", () => this.emit());
       this.listen(video, "ended", () => { this.pause(); this.emit(); });
@@ -99,10 +106,36 @@ export class SyncPlayer {
     try { video.currentTime = target; } catch { delete this.expected[index].seek; }
   }
 
+  isReady(index) {
+    const video = this.videos[index];
+    return video.readyState >= 3 && !video.seeking;
+  }
+
+  isFullscreen(index) {
+    const fullscreen = this.videos[index]?.ownerDocument?.fullscreenElement;
+    return !!(fullscreen && (fullscreen === this.videos[index] || fullscreen.contains?.(this.videos[index])));
+  }
+
+  shouldIgnorePeerWait(index) {
+    return this.isFullscreen(1 - index) && this.videos[index].muted;
+  }
+
   seek(value) {
     const range = this.range();
     const time = range ? Math.max(range.start, Math.min(value, range.end)) : Math.max(0, value);
     this.videos.forEach((_, index) => this.setTime(index, time + (index === 1 ? this.offset : 0)));
+    if (this.wantPlaying) {
+      if (range && time >= range.end - .06) {
+        this.pause();
+        return;
+      }
+      // Release any buffer-hold pause so both videos fetch the new seek target in parallel.
+      if (this.buffering.size || this.videos.some((video) => video.paused)) {
+        this.buffering.clear();
+        void this.play({ align: false });
+        return;
+      }
+    }
     this.emit();
   }
 
@@ -151,10 +184,27 @@ export class SyncPlayer {
     });
   }
 
+  pauseElement(index) {
+    const video = this.videos[index];
+    this.expected[index].playing = false;
+    if (!video.paused) video.pause();
+  }
+
   pauseElements() {
+    this.videos.forEach((_, index) => this.pauseElement(index));
+  }
+
+  holdReadyPeers() {
+    // Pause only a ready peer while the other video buffers. Leaving buffering
+    // videos unpaused prevents Chromium from stopping range fetches at readyState 2.
     this.videos.forEach((video, index) => {
-      this.expected[index].playing = false;
-      if (!video.paused) video.pause();
+      const peer = 1 - index;
+      if (this.buffering.has(index) && video.paused) {
+        this.expected[index].playing = true;
+        try { Promise.resolve(video.play()).catch(() => {}); } catch {}
+      } else if (this.isReady(index) && !this.buffering.has(index) && this.buffering.has(peer) && !this.shouldIgnorePeerWait(peer)) {
+        this.pauseElement(index);
+      }
     });
   }
 
@@ -167,15 +217,22 @@ export class SyncPlayer {
     this.emit();
   }
 
-  async play() {
+  async play({ align = true } = {}) {
     if (this.destroyed) return;
     const range = this.range();
     if (!range) { this.pause(); this.onError("请等待两路视频就绪，并确认它们有重叠的播放时间。"); return; }
     if (this.time() >= range.end - .1) {
       if (this.wantPlaying) { this.pause(); return; }
       this.seek(range.start);
-    } else this.seek(this.time());
+    } else if (align) {
+      this.videos.forEach((_, index) => this.setTime(index, this.time() + (index === 1 ? this.offset : 0)));
+    } else {
+      const follower = 1 - this.leader;
+      const target = this.time() + (follower === 1 ? this.offset : 0);
+      if (Math.abs(this.videos[follower].currentTime - target) > .35) this.setTime(follower, target);
+    }
     this.wantPlaying = true;
+    this.videos.forEach((video) => { if (video.preload !== "auto") video.preload = "auto"; });
     if (this.buffering.size) { this.emit(); return; }
     const generation = ++this.generation;
     const results = await Promise.allSettled(this.videos.map((video, index) => {
@@ -192,10 +249,13 @@ export class SyncPlayer {
   }
 
   resumeIfReady() {
-    if (!this.wantPlaying || !this.buffering.size) return;
-    if (this.videos.every((video) => video.readyState >= 3 && !video.seeking)) {
-      this.buffering.clear();
-      void this.play();
+    if (!this.wantPlaying) return;
+    for (const index of [...this.buffering]) {
+      if (this.isReady(index) || this.shouldIgnorePeerWait(index)) this.buffering.delete(index);
+    }
+    if (this.buffering.size) return;
+    if (this.videos.every((_, index) => this.isReady(index)) && this.videos.some((video) => video.paused)) {
+      void this.play({ align: false });
     }
   }
 
@@ -203,6 +263,15 @@ export class SyncPlayer {
     if (this.destroyed) return;
     const range = this.range();
     if (this.wantPlaying && range && this.time() >= range.end - .06) { this.seek(range.end); this.pause(); }
+    if (this.wantPlaying) {
+      this.resumeIfReady();
+      this.videos.forEach((video, index) => {
+        if (video.paused && !this.isReady(index) && (this.buffering.has(index) || video.seeking)) {
+          this.expected[index].playing = true;
+          try { Promise.resolve(video.play()).catch(() => {}); } catch {}
+        }
+      });
+    }
     if (this.wantPlaying && !this.buffering.size && this.videos.every((video) => !video.paused && !video.seeking && video.readyState >= 3)) {
       const follower = 1 - this.leader;
       const target = this.time() + (follower === 1 ? this.offset : 0);

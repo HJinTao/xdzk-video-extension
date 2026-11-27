@@ -140,7 +140,7 @@ function loadPair({ preserve = false } = {}) {
   message();
   videos.forEach((video, index) => {
     if (players[index]) players[index].url = pair[index].url;
-    else players[index] = createLecturePlayer(video, pair[index].url);
+    else players[index] = createLecturePlayer(video, pair[index].url, { hotkey: false });
     video.load();
   });
   engine = new SyncPlayer(videos, { onState: stateChanged, onError: message });
@@ -181,7 +181,7 @@ async function load({ refresh = false } = {}) {
   finally { $("refresh").disabled = false; }
 }
 
-$("play").addEventListener("click", () => { if (!engine) return; message(); if (engine.wantPlaying) engine.pause(); else void engine.play(); });
+$("play").addEventListener("click", togglePlayback);
 $("back").addEventListener("click", () => engine?.seek(engine.time() - 10));
 $("forward").addEventListener("click", () => engine?.seek(engine.time() + 10));
 $("timeline").addEventListener("input", () => { editingTimeline = true; $("current").textContent = formatClock(Number($("timeline").value)); });
@@ -199,6 +199,51 @@ $("toggle-captions").addEventListener("click", () => {
 });
 $("close-review").addEventListener("click", () => showReview(false));
 $("review-source").addEventListener("change", () => selectReview(Number($("review-source").value)));
+
+function isEditableTarget(target) {
+  if (!(target instanceof Element)) return false;
+  if (target.isContentEditable) return true;
+  if (target.matches("textarea, select")) return true;
+  return target.matches("input") && target.id !== "timeline";
+}
+
+function togglePlayback() {
+  if (!engine?.range()) return;
+  message();
+  if (engine.wantPlaying) engine.pause();
+  else void engine.play();
+}
+
+document.addEventListener("keydown", (event) => {
+  if (!engine?.range() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target;
+  if (isEditableTarget(target)) return;
+  if (event.code === "ArrowRight" || event.code === "ArrowLeft") {
+    event.preventDefault();
+    const step = event.shiftKey ? 10 : 5;
+    engine.seek(engine.time() + (event.code === "ArrowRight" ? step : -step));
+    return;
+  }
+  if (event.code === "Space") {
+    if (target instanceof Element && target.matches("a, summary, button:not(#play):not(#back):not(#forward)")) return;
+    event.preventDefault();
+    togglePlayback();
+    return;
+  }
+  if ((event.code === "ArrowUp" || event.code === "ArrowDown") && engine.audio >= 0) {
+    if (target instanceof Element && target.matches("button, a, summary")) return;
+    event.preventDefault();
+    const active = videos[engine.audio];
+    active.volume = Math.max(0, Math.min(1, Math.round((active.volume + (event.code === "ArrowUp" ? .1 : -.1)) * 10) / 10));
+  }
+});
+
+document.addEventListener("fullscreenchange", () => {
+  if (!engine) return;
+  engine.resumeIfReady();
+  if (!document.fullscreenElement && engine.wantPlaying) engine.tick();
+});
+
 window.addEventListener("pagehide", () => {
   engine?.destroy();
   changingSources = true;
