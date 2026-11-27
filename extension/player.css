@@ -80,19 +80,20 @@ main button:hover:enabled, summary:hover { background: var(--tint); }
 .playlist-head-actions, .playlist-tools { display: flex; align-items: center; gap: 8px; }
 .playlist-tools select { flex: 1; min-width: 0; }
 .playlist-list {
-  padding: 0; margin: 0; list-style: none; max-height: clamp(280px, 60vh, 680px);
-  overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px;
+  padding: 0 2px 0 0; margin: 0; list-style: none; max-height: clamp(280px, 60vh, 680px);
+  overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px;
 }
 .playlist-item {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 4px;
+  flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 0;
   border: 1px solid var(--line); border-radius: 8px; background: var(--paper); overflow: hidden;
 }
 .playlist-item[data-current="true"] { border-color: var(--accent); background: var(--tint); }
 .playlist-item[data-status="upcoming"] { opacity: .62; }
 .lesson-select {
-  border: 0 !important; border-radius: 0 !important; background: transparent !important;
-  padding: 9px 10px !important; text-align: start; display: flex !important; flex-direction: column;
-  align-items: stretch !important; justify-content: flex-start !important; gap: 4px !important; min-width: 0;
+  width: 100%; border: 0 !important; border-radius: 0 !important; background: transparent !important;
+  padding: 10px 11px !important; text-align: start; display: flex !important; flex-direction: column;
+  align-items: stretch !important; justify-content: flex-start !important; gap: 5px !important; min-width: 0;
+  min-height: auto !important;
 }
 .lesson-top, .lesson-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
 .lesson-index { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); flex: none; }
