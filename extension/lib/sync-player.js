@@ -11,7 +11,7 @@ function isBufferedSeek(video) {
 
 export class SyncPlayer {
   constructor(videos, { onState = () => {}, onError = () => {}, onEnded = () => {}, interval = 250 } = {}) {
-    if (videos.length !== 2) throw new Error("请选择两路画面。");
+    if (!Array.isArray(videos) || videos.length < 1 || videos.length > 2) throw new Error("请至少选择一路画面。");
     this.videos = videos;
     this.onState = onState;
     this.onError = onError;
@@ -96,6 +96,10 @@ export class SyncPlayer {
   }
 
   range() {
+    if (this.videos.length === 1) {
+      const duration = this.videos[0].duration;
+      return Number.isFinite(duration) && duration > 0 ? { start: 0, end: duration } : null;
+    }
     const [first, second] = this.videos.map((video) => video.duration);
     if (![first, second].every((duration) => Number.isFinite(duration) && duration > 0)) return null;
     const start = Math.max(0, -this.offset);
@@ -104,7 +108,8 @@ export class SyncPlayer {
   }
 
   time() {
-    return Math.max(0, (this.videos[this.leader].currentTime || 0) - (this.leader === 1 ? this.offset : 0));
+    const leader = this.leader < this.videos.length ? this.leader : 0;
+    return Math.max(0, (this.videos[leader].currentTime || 0) - (leader === 1 ? this.offset : 0));
   }
 
   setTime(index, value) {
@@ -127,6 +132,7 @@ export class SyncPlayer {
   }
 
   shouldIgnorePeerWait(index) {
+    if (this.videos.length < 2) return false;
     return this.isFullscreen(1 - index) && this.videos[index].muted;
   }
 
@@ -181,7 +187,7 @@ export class SyncPlayer {
   }
 
   setAudio(index) {
-    if (![0, 1, -1].includes(index)) return;
+    if (index !== -1 && (index < 0 || index >= this.videos.length)) return;
     this.audio = index;
     if (index >= 0 && this.leader !== index) {
       this.leader = index;
@@ -209,6 +215,7 @@ export class SyncPlayer {
   }
 
   holdReadyPeers() {
+    if (this.videos.length < 2) return;
     // Pause only a ready peer while the other video buffers. Leaving buffering
     // videos unpaused prevents Chromium from stopping range fetches at readyState 2.
     this.videos.forEach((video, index) => {
@@ -234,13 +241,17 @@ export class SyncPlayer {
   async play({ align = true } = {}) {
     if (this.destroyed) return;
     const range = this.range();
-    if (!range) { this.pause(); this.onError("请等待两路视频就绪，并确认它们有重叠的播放时间。"); return; }
+    if (!range) {
+      this.pause();
+      this.onError(this.videos.length === 1 ? "请等待视频就绪后再播放。" : "请等待两路视频就绪，并确认它们有重叠的播放时间。");
+      return;
+    }
     if (this.time() >= range.end - .1) {
       if (this.wantPlaying) { this.pause(); return; }
       this.seek(range.start);
     } else if (align) {
       this.videos.forEach((_, index) => this.setTime(index, this.time() + (index === 1 ? this.offset : 0)));
-    } else {
+    } else if (this.videos.length === 2) {
       const follower = 1 - this.leader;
       const target = this.time() + (follower === 1 ? this.offset : 0);
       if (Math.abs(this.videos[follower].currentTime - target) > .35) this.setTime(follower, target);
@@ -296,7 +307,7 @@ export class SyncPlayer {
         }
       });
     }
-    if (this.wantPlaying && !this.buffering.size && this.videos.every((video) => !video.paused && !video.seeking && video.readyState >= 3)) {
+    if (this.videos.length === 2 && this.wantPlaying && !this.buffering.size && this.videos.every((video) => !video.paused && !video.seeking && video.readyState >= 3)) {
       const follower = 1 - this.leader;
       const target = this.time() + (follower === 1 ? this.offset : 0);
       const difference = this.videos[follower].currentTime - target;

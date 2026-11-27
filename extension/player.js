@@ -16,6 +16,7 @@ const AUTO_REFRESH_COOLDOWN_MS = 30_000;
 const LOGIN_PORTAL_URL = "https://xdspoc.xidian.edu.cn/";
 let engine;
 let media = [];
+let singleMode = false;
 let primary = 0;
 let reviewIndex = 0;
 let reviewClock = 0;
@@ -54,6 +55,10 @@ let pendingStart = null;
 const players = [];
 
 function selectedPair() {
+  if (media.length === 1) {
+    const first = media.find((item) => item.key === $("source-0").value) || media[0];
+    return first ? [first] : [];
+  }
   return [$("source-0").value, $("source-1").value].map((key) => media.find((item) => item.key === key));
 }
 
@@ -190,9 +195,9 @@ function setPrimary(index) {
 }
 
 function selectReview(index) {
-  reviewIndex = index;
-  $("review-source").value = String(index);
-  document.querySelectorAll("[data-track-panel]").forEach((panel) => { panel.hidden = Number(panel.dataset.trackPanel) !== index; });
+  reviewIndex = singleMode ? 0 : index;
+  $("review-source").value = String(reviewIndex);
+  document.querySelectorAll("[data-track-panel]").forEach((panel) => { panel.hidden = Number(panel.dataset.trackPanel) !== reviewIndex; });
   refreshCaptions();
 }
 
@@ -477,7 +482,9 @@ function stateChanged(state) {
   const ready = !!state.range;
   for (const name of ["play", "back", "forward", "timeline"]) $(name).disabled = !ready;
   $("play").textContent = state.playing ? "暂停" : "播放";
-  const status = state.buffering ? "缓冲中，等待两路画面" : !ready ? "等待两路视频就绪或时间重叠" : state.playing ? "两路同步播放中" : "两路已同步";
+  const status = singleMode
+    ? (state.buffering ? "缓冲中" : !ready ? "等待视频就绪" : state.playing ? "单画面播放中" : "单画面已就绪")
+    : (state.buffering ? "缓冲中，等待两路画面" : !ready ? "等待两路视频就绪或时间重叠" : state.playing ? "两路同步播放中" : "两路已同步");
   const statusEl = $("sync-status");
   if (statusEl.textContent !== status) statusEl.textContent = status;
   statusEl.dataset.state = state.buffering ? "buffering" : !ready ? "idle" : state.playing ? "playing" : "ready";
@@ -531,7 +538,7 @@ async function autoRefreshSources({ resumeTime = 0, shouldPlay = false, fallback
   message("视频链接可能已过期，正在自动续签视频源…");
   try {
     const result = await chrome.runtime.sendMessage({ type: "GET_PLAYER", id, refresh: true, auto: true });
-    if (!result?.ok || !Array.isArray(result.media) || result.media.length < 2) {
+    if (!result?.ok || !Array.isArray(result.media) || result.media.length < 1) {
       const err = new Error(result?.error || fallbackMessage);
       if (result?.reason) err.reason = result.reason;
       throw err;
@@ -572,6 +579,20 @@ function handleEngineError(errorText, detail) {
   message(errorText);
 }
 
+function setScreenMode(single) {
+  singleMode = single;
+  document.querySelector(".screens").dataset.mode = single ? "single" : "dual";
+  $("screen-1").hidden = single;
+  $("swap-views").hidden = single;
+  $("audio-option-1").hidden = single;
+  $("source-1-wrap").hidden = single;
+  $("offset-wrap").hidden = single;
+  $("reset-offset").hidden = single;
+  const reviewSelect = $("review-source");
+  if (reviewSelect.options[1]) reviewSelect.options[1].hidden = single;
+  reviewSelect.disabled = single;
+}
+
 function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, autoplay = false } = {}) {
   const time = preserve ? (resumeAt || engine?.time() || 0) : resumeAt;
   const previousOffset = preserve ? engine?.offset : undefined;
@@ -582,8 +603,57 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
   lastSavedTime = -1;
   engine?.destroy();
   engine = null;
+  setScreenMode(media.length === 1);
+  if (singleMode) {
+    const item = selectedPair()[0];
+    const valid = !!item;
+    $("swap-views").disabled = true;
+    for (const name of ["toggle-review", "toggle-captions"]) $(name).disabled = !valid;
+    const name = item?.label || "画面 1";
+    $("screen-name-0").textContent = name;
+    $("screen-role-0").textContent = "单画面";
+    $("audio-name-0").textContent = name;
+    $("review-source").options[0].textContent = name;
+    changingSources = true;
+    subtitles[0].setSource(valid ? item.key : "");
+    subtitles[1].setSource("");
+    changingSources = false;
+    players[1]?.reset();
+    if (!valid) {
+      refreshCaptions();
+      if (!$("review").hidden) showReview(false);
+      players[0]?.reset();
+      stateChanged({ time: 0, range: null, playing: false, rate: savedRate });
+      message("没有可用的视频源。");
+      return;
+    }
+    primary = 0;
+    document.querySelector(".screens").dataset.primary = "0";
+    if (!preserve && !userTouchedAudio) {
+      const preferred = resolveAudioPref(playerPrefs, courseKey, [item]);
+      savedAudio = preferred === -1 ? -1 : 0;
+    }
+    const effectiveAudio = savedAudio === -1 ? -1 : 0;
+    message();
+    if (players[0]) players[0].url = item.url;
+    else players[0] = createLecturePlayer(videos[0], item.url, { hotkey: false, volume: savedVolume });
+    videos[0].load();
+    applyVolume(savedVolume);
+    engine = new SyncPlayer([videos[0]], { onState: stateChanged, onError: handleEngineError, onEnded: handlePlaybackEnded });
+    engine.setAudio(effectiveAudio);
+    syncAudioRadios(effectiveAudio);
+    engine.setRate(rate);
+    subtitles[0].ensureCourse();
+    selectReview(0);
+    if (time > 0 || autoplay) {
+      const start = { generation: engine, time, relativeToRange, autoplay };
+      if (engine.range()) applyPendingStart(start);
+      else pendingStart = start;
+    }
+    return;
+  }
   const pair = selectedPair();
-  const valid = pair.every(Boolean) && pair[0].key !== pair[1].key;
+  const valid = pair.length === 2 && pair.every(Boolean) && pair[0].key !== pair[1].key;
   for (const name of ["swap-views", "toggle-review", "toggle-captions"]) $(name).disabled = !valid;
   pair.forEach((item, index) => {
     const name = item?.label || `画面 ${index + 1}`;
@@ -609,6 +679,8 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
       savedAudio = resolveAudioPref(playerPrefs, courseKey, pair);
       syncAudioRadios(savedAudio);
     }
+  } else {
+    setPrimary(primary);
   }
   message();
   videos.forEach((video, index) => {
@@ -636,15 +708,23 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
 
 function populateSources(nextMedia, { keepSelection = false } = {}) {
   const previous = [$("source-0").value, $("source-1").value];
+  const wasSingle = media.length === 1;
   media = nextMedia;
+  const isSingle = media.length === 1;
   for (let index = 0; index < 2; index++) {
     const select = $("source-" + index);
+    if (isSingle && index === 1) {
+      select.replaceChildren();
+      continue;
+    }
     select.replaceChildren(...media.map((item) => {
       const option = document.createElement("option"); option.value = item.key; option.textContent = item.label; return option;
     }));
-    select.value = keepSelection && media.some((item) => item.key === previous[index]) ? previous[index] : media[index].key;
+    const fallback = media[index]?.key || media[0]?.key || "";
+    select.value = keepSelection && media.some((item) => item.key === previous[index]) ? previous[index] : fallback;
   }
-  return previous.every((key, index) => key === $("source-" + index).value);
+  if (wasSingle !== isSingle) return false;
+  return isSingle ? previous[0] === $("source-0").value : previous.every((key, index) => key === $("source-" + index).value);
 }
 
 async function switchLesson(targetLiveId, { autoplay = true } = {}) {
@@ -659,7 +739,7 @@ async function switchLesson(targetLiveId, { autoplay = true } = {}) {
   try {
     const result = await chrome.runtime.sendMessage({ type: "LOAD_LESSON", id, liveId: targetLiveId });
     if (!result?.ok) throw new Error(result?.error || "切换课次失败，请重试。");
-    if (!Array.isArray(result.media) || result.media.length < 2) throw new Error("该课次缺少双路视频源，无法同步播放。");
+    if (!Array.isArray(result.media) || result.media.length < 1) throw new Error("该课次没有可用的视频源，暂时无法播放。");
     currentLiveId = result.currentLiveId || targetLiveId;
     autoRefreshFailedFor = "";
     lastAutoRefreshSuccessAt = 0;
@@ -703,15 +783,16 @@ async function loadPlaylist({ showErrors = false } = {}) {
     courseKey = result.courseKey || "";
     if (engine) {
       const pair = selectedPair();
-      if (!userTouchedAudio && pair.every(Boolean)) {
-        const preferredAudio = resolveAudioPref(playerPrefs, courseKey, pair);
+      if (!userTouchedAudio && pair.length && pair.every(Boolean)) {
+        const rawPreferred = resolveAudioPref(playerPrefs, courseKey, pair);
+        const preferredAudio = singleMode ? (rawPreferred === -1 ? -1 : 0) : rawPreferred;
         if (preferredAudio !== savedAudio) {
           savedAudio = preferredAudio;
           syncAudioRadios(savedAudio);
           engine.setAudio(savedAudio);
         }
       }
-      if (!userTouchedOffset) {
+      if (!singleMode && !userTouchedOffset) {
         const preferredOffset = resolveOffsetPref(playerPrefs, courseKey);
         if (preferredOffset !== undefined && preferredOffset !== engine.offset) {
           $("offset").value = preferredOffset;
@@ -750,8 +831,8 @@ async function load({ refresh = false } = {}) {
   if (refresh) autoRefreshFailedFor = "";
   try {
     const result = await chrome.runtime.sendMessage({ type: "GET_PLAYER", id, refresh });
-    if (!result?.ok) throw new Error(result?.error || "无法读取课程，请从扩展面板重新打开同步播放。");
-    if (result.media.length < 2) throw new Error("至少需要两路视频。请回到原回放页面，播放两路画面并重新识别。");
+    if (!result?.ok) throw new Error(result?.error || "无法读取课程，请从扩展面板重新打开播放器。");
+    if (!Array.isArray(result.media) || result.media.length < 1) throw new Error("还没有识别到视频。请回到原回放页面，播放画面并重新识别。");
     if (result.currentLiveId) currentLiveId = result.currentLiveId;
     if (result.courseKey && !courseKey) courseKey = result.courseKey;
     if (!refresh && result.prefs) applyGlobalPrefs(result.prefs);
@@ -794,7 +875,7 @@ $("offset").addEventListener("change", () => {
 });
 $("reset-offset")?.addEventListener("click", () => {
   const pair = selectedPair();
-  const autoOffset = pair.every(Boolean) ? recordingOffset(pair[0].url, pair[1].url) : 0;
+  const autoOffset = pair.length === 2 && pair.every(Boolean) ? recordingOffset(pair[0].url, pair[1].url) : 0;
   userTouchedOffset = false;
   $("offset").value = autoOffset;
   engine?.setOffset(autoOffset);

@@ -310,3 +310,42 @@ test("switching audio promotes the audible video to leader so drift correction o
   assert.equal(videos[1].playbackRate, 1);
   assert.equal(videos[0].playbackRate, 1.04);
 });
+
+test("single-video SyncPlayer supports play, seek, rate, mute, buffering and ended cleanly", async (t) => {
+  const video = new Video(90);
+  let endedCount = 0;
+  const errors = [];
+  const engine = new SyncPlayer([video], {
+    interval: 0,
+    onError: (err) => errors.push(err),
+    onEnded: () => { endedCount++; }
+  });
+  t.after(() => engine.destroy());
+
+  assert.deepEqual(engine.range(), { start: 0, end: 90 });
+  await engine.play(); await flush();
+  assert.equal(engine.wantPlaying, true);
+  assert.equal(video.paused, false);
+  assert.equal(video.muted, false);
+
+  engine.seek(30); await flush();
+  assert.equal(video.currentTime, 30);
+  engine.setRate(1.5); await flush();
+  assert.equal(video.playbackRate, 1.5);
+  engine.setAudio(-1); await flush();
+  assert.equal(video.muted, true);
+  engine.setAudio(0); await flush();
+  assert.equal(video.muted, false);
+
+  video.readyState = 2; video.emit("waiting"); await flush();
+  assert.equal(engine.wantPlaying, true);
+  assert.equal(video.paused, false);
+  video.readyState = 4; video.emit("canplay"); await flush();
+  assert.equal(engine.buffering.size, 0);
+
+  video.position = 89.99;
+  engine.tick(); await flush();
+  assert.equal(engine.wantPlaying, false);
+  assert.equal(endedCount, 1);
+  assert.equal(errors.length, 0);
+});

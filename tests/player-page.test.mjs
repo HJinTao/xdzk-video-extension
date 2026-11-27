@@ -635,3 +635,83 @@ test("restores and persists layered global and per-course player preferences", a
   assert.ok(savedPatches.some((p) => p.courseKey === "code:CS101" && p.offset === null));
   assert.ok(savedPatches.some((p) => p.volume === 0.5));
 });
+
+test("player degrades cleanly to single-stream mode and transitions seamlessly between single and dual lessons", async (t) => {
+  const lessons = [
+    { liveId: "201", index: 1, title: "第 1 讲（单画面）", shortDate: "09-07", timeRange: "08:30–10:05", available: true },
+    { liveId: "202", index: 2, title: "第 2 讲（双画面）", shortDate: "09-09", timeRange: "08:30–10:05", available: true },
+    { liveId: "203", index: 3, title: "第 3 讲（单画面）", shortDate: "09-11", timeRange: "08:30–10:05", available: true }
+  ];
+  const { dom, document, videos } = await page({
+    playlistResult: { ok: true, supported: true, courseKey: "code:CS201", courseTitle: "编译原理", currentLiveId: "201", lessons, progress: {}, prefs: { autoPlayNext: true } },
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        return {
+          ok: true,
+          courseTitle: "编译原理",
+          currentLiveId: "201",
+          media: [{ key: mediaKey(mediaUrl("CloudIPC-201-ppt")), label: "课件", url: mediaUrl("CloudIPC-201-ppt") }]
+        };
+      }
+      if (message.type === "LOAD_LESSON") {
+        if (message.liveId === "202") {
+          return {
+            ok: true,
+            courseTitle: "编译原理",
+            lessonTitle: "第 2 讲（双画面）",
+            currentLiveId: "202",
+            media: [
+              { key: mediaKey(mediaUrl("CloudIPC-202-ppt")), label: "课件", url: mediaUrl("CloudIPC-202-ppt") },
+              { key: mediaKey(mediaUrl("CloudIPC-202-cam")), label: "教室", url: mediaUrl("CloudIPC-202-cam") }
+            ]
+          };
+        }
+        return {
+          ok: true,
+          courseTitle: "编译原理",
+          lessonTitle: "第 3 讲（单画面）",
+          currentLiveId: "203",
+          media: [{ key: mediaKey(mediaUrl("CloudIPC-203-ppt")), label: "课件", url: mediaUrl("CloudIPC-203-ppt") }]
+        };
+      }
+    },
+    prepareMedia(win) {
+      const states = new WeakMap();
+      Object.defineProperty(win.HTMLMediaElement.prototype, "paused", { configurable: true, get() { return states.get(this) ?? true; } });
+      win.HTMLMediaElement.prototype.play = function() { states.set(this, false); return Promise.resolve(); };
+      win.HTMLMediaElement.prototype.pause = function() { states.set(this, true); };
+    }
+  });
+  t.after(() => close(dom));
+
+  // Starts in single-stream mode: secondary view and dual-only controls hidden, playback enabled.
+  assert.equal(document.querySelector(".screens").dataset.mode, "single");
+  assert.equal(document.querySelector("#screen-1").hidden, true);
+  assert.equal(document.querySelector("#swap-views").hidden, true);
+  assert.equal(document.querySelector("#audio-option-1").hidden, true);
+  assert.equal(document.querySelector("#offset-wrap").hidden, true);
+  assert.equal(document.querySelector("#play").disabled, false);
+  assert.equal(document.querySelector("#screen-role-0").textContent, "单画面");
+  assert.match(document.querySelector("#sync-status").textContent, /单画面/);
+
+  // Switch to dual-stream lesson 202: restores dual layout and plays both videos.
+  document.querySelector("#next-lesson").click();
+  await flush();
+  assert.equal(document.querySelector(".screens").dataset.mode, "dual");
+  assert.equal(document.querySelector("#screen-1").hidden, false);
+  assert.equal(document.querySelector("#swap-views").hidden, false);
+  assert.equal(document.querySelector("#audio-option-1").hidden, false);
+  assert.equal(document.querySelector("#offset-wrap").hidden, false);
+  assert.match(videos[0].src, /CloudIPC-202-ppt/);
+  assert.match(videos[1].src, /CloudIPC-202-cam/);
+  assert.ok(videos.every((v) => !v.paused));
+
+  // Switch to single-stream lesson 203: degrades back to single layout and resets video 1.
+  document.querySelector("#next-lesson").click();
+  await flush();
+  assert.equal(document.querySelector(".screens").dataset.mode, "single");
+  assert.equal(document.querySelector("#screen-1").hidden, true);
+  assert.equal(videos[1].getAttribute("src"), null);
+  assert.equal(videos[0].paused, false);
+  assert.match(videos[0].src, /CloudIPC-203-ppt/);
+});

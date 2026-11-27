@@ -63,8 +63,14 @@ main :where(button, select):hover:enabled, summary:hover {
   display: grid; grid-template-columns: minmax(0, 2.35fr) minmax(0, 1fr);
   grid-template-areas: "primary secondary"; align-items: start; gap: 14px;
 }
+.screens[data-mode="single"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "primary";
+}
 .screens[data-primary="0"] #screen-0, .screens[data-primary="1"] #screen-1 { grid-area: primary; }
 .screens[data-primary="0"] #screen-1, .screens[data-primary="1"] #screen-0 { grid-area: secondary; }
+.screens[data-mode="single"] #screen-0 { grid-area: primary; }
+.screens[data-mode="single"] #screen-1 { display: none; }
 .screens figure {
   container-type: inline-size; background: var(--paper); border: 1px solid var(--line);
   border-radius: var(--radius-lg); overflow: hidden;
