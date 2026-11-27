@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "西电智课 · 录播下载",
+  "name": "西电智课 · 录播助手",
   "description": "同步观看西电智课的课件和教室画面，搜索字幕并跳转，也可将录播下载到本地。",
   "version": "0.6.0",
   "minimum_chrome_version": "114",
@@ -22,7 +22,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "西电智课录播下载",
+    "default_title": "西电智课 · 录播助手",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

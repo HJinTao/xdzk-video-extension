@@ -33,8 +33,8 @@
 3. **开启浏览器开发者模式**：
    - Chrome：在地址栏输入 `chrome://extensions/` 并按回车，打开右上角 **开发者模式**。
    - Edge：在地址栏输入 `edge://extensions/` 并按回车，打开左侧（或上方）**开发人员模式**。[Edge 官方安装图解](https://learn.microsoft.com/zh-cn/microsoft-edge/extensions/getting-started/extension-sideloading)
-4. **加载扩展**：点击 **加载已解压的扩展程序**（Load unpacked），选中第 2 步中**直接包含 `manifest.json` 的文件夹**。扩展列表出现 **西电智课 · 录播下载** 即安装成功。
-5. **固定到工具栏（建议）**：点击浏览器地址栏右侧的拼图图标（扩展程序菜单），点击 **西电智课 · 录播下载** 右侧的图钉图标将其固定在工具栏，随后刷新已打开的课程回放页即可使用。
+4. **加载扩展**：点击 **加载已解压的扩展程序**（Load unpacked），选中第 2 步中**直接包含 `manifest.json` 的文件夹**。扩展列表出现 **西电智课 · 录播助手** 即安装成功。
+5. **固定到工具栏（建议）**：点击浏览器地址栏右侧的拼图图标（扩展程序菜单），点击 **西电智课 · 录播助手** 右侧的图钉图标将其固定在工具栏，随后刷新已打开的课程回放页即可使用。
 
 > [!TIP]
 > 如果你下载的是 GitHub 自动生成的 **Source code (zip)** 或直接 `git clone` 了本仓库，请在「加载已解压的扩展程序」时选择仓库内的 **`extension/`** 子文件夹。
@@ -42,7 +42,7 @@
 ### 从旧版本升级
 
 1. 下载最新的 [ZIP 安装包](https://github.com/Pais1ey/xdzk-video-extension/releases/latest/download/xdzk-recorder-latest.zip) 并解压，将里面的文件**覆盖**到之前加载的扩展目录（若直接加载源码仓库的 `extension/`，执行 `git pull` 即可）。
-2. 打开 `chrome://extensions/` 或 `edge://extensions/`，在 **西电智课 · 录播下载** 卡片上点击 **重新加载**（圆形箭头图标），确认版本号已更新。
+2. 打开 `chrome://extensions/` 或 `edge://extensions/`，在 **西电智课 · 录播助手** 卡片上点击 **重新加载**（圆形箭头图标），确认版本号已更新。
 3. 关闭之前打开的同步播放器标签页，刷新学校的课程回放页，再从扩展面板打开 **同步看课**。已保存的观看进度和已看标记会保留在浏览器本地，不会丢失。
 
 ### 可选：使用 CRX 安装（Linux / 组织策略部署）
