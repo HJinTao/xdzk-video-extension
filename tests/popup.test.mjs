@@ -208,3 +208,27 @@ test("the checklist totals known and unknown sizes, keeps the user's subset and 
   await until(() => downloadCalls.length > 0 && !document.getElementById("scan").disabled);
   assert.deepEqual(downloadCalls.map(job => job.url), [mediaUrl("CloudIPC-demo-b")]);
 });
+
+test("popup shows course playlist progress summary when the course list is available", async (t) => {
+  const { dom, document, api } = await mount();
+  t.after(() => dom.window.close());
+  const originalExecute = api.scripting.executeScript;
+  api.scripting.executeScript = async (details) => {
+    if (details.func?.name === "fetchCoursePlaylistInPage") {
+      return [{
+        result: {
+          ok: true,
+          items: [
+            { id: 100, courseCode: "CS101", courseName: "数据库系统", days: 1, jie: "1-2", startTime: { time: 1700000000000 }, endTime: { time: 1700003600000 } },
+            { id: 101, courseCode: "CS101", courseName: "数据库系统", days: 1, jie: "3-4", startTime: { time: 1700007200000 }, endTime: { time: 1700010800000 } }
+          ]
+        }
+      }];
+    }
+    return originalExecute(details);
+  };
+  await api.storage.local.set({ "watchProgress:v1": { "100": { liveId: "100", status: "watched", ratio: 1 } } });
+  document.querySelector("#scan").click();
+  await until(() => !document.querySelector("#playlist-progress").hidden);
+  assert.equal(document.querySelector("#playlist-progress").textContent, "同课程 2 节 · 已看 1 节");
+});

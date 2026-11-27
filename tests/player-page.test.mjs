@@ -334,6 +334,15 @@ test("course playlist switches lessons in place, tracks watched status and count
   items[0].querySelector(".lesson-mark").click();
   await flush();
   assert.equal(document.querySelector("#playlist-badge").textContent, "1/2");
+  assert.equal(document.querySelector("#playlist-overall-fill").style.width, "50%");
+
+  // Sidebar tabs switch smoothly between 课程目录 and 字幕复习.
+  document.querySelector(".side-tab-review").click();
+  assert.equal(document.querySelector("#playlist-panel").hidden, true);
+  assert.equal(document.querySelector("#review").hidden, false);
+  document.querySelector(".side-tab-playlist").click();
+  assert.equal(document.querySelector("#playlist-panel").hidden, false);
+  assert.equal(document.querySelector("#review").hidden, true);
 
   // Filtering to unwatched hides the watched lesson and the upcoming lesson.
   const filter = document.querySelector("#playlist-filter");
