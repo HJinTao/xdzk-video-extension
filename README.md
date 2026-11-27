@@ -1,9 +1,9 @@
 # 西电智课 · 录播助手
 
-[![Latest Release](https://img.shields.io/github/v/release/Pais1ey/xdzk-video-extension?label=Release&color=3669ae)](https://github.com/Pais1ey/xdzk-video-extension/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Pais1ey/xdzk-video-extension/ci.yml?branch=main&label=CI)](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/Pais1ey/xdzk-video-extension?color=2f609f)](LICENSE)
-![Browser](https://img.shields.io/badge/Chrome_%2F_Edge-114%2B-51657e)
+[![CI](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/ci.yml)
+[![Release](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/release.yml)
+
+[最新 Release](https://github.com/Pais1ey/xdzk-video-extension/releases/latest) · [Chrome / Edge 114+](#安装与配置指南) · [MIT License](LICENSE) · [开发与发版指南](docs/DEVELOPMENT.md)
 
 在电脑上看西电智课回放时，可以让课件和教室画面双路同步播放、直接切换同一门课的全部课次并自动连播、记录每节课的观看进度、按字幕关键词跳转原句，也可将需要的画面保存为 MP4。适用于 Chrome 和 Microsoft Edge 114 及以上版本。
 
