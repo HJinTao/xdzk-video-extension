@@ -1,6 +1,6 @@
 {
   "name": "xdzk-recorder",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "西电智课录播下载 Chrome / Edge 扩展",
