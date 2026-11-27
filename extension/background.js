@@ -5,7 +5,11 @@ const controller = createController(chrome);
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   controller.dispatch(message, sender)
     .then(sendResponse)
-    .catch((error) => sendResponse({ ok: false, error: error.message || "操作失败，请重试。" }));
+    .catch((error) => sendResponse({
+      ok: false,
+      error: error.message || "操作失败，请重试。",
+      ...(error.reason ? { reason: error.reason } : {})
+    }));
   return true;
 });
 

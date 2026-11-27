@@ -369,3 +369,92 @@ test("course playlist switches lessons in place, tracks watched status and count
   assert.equal(document.querySelector("#next-countdown").hidden, true);
   assert.ok(videos.every((v) => !v.paused));
 });
+
+test("expired video source auto-refreshes once, restores playback, and routes failure actions by cause without retrying", async (t) => {
+  let refreshMode = "ok";
+  let autoRefreshCalls = 0;
+  const makeMedia = (stamp) => [
+    { key: mediaKey(mediaUrl("CloudIPC-demo-a", stamp)), label: "课件", url: mediaUrl("CloudIPC-demo-a", stamp) },
+    { key: mediaKey(mediaUrl("CloudIPC-demo-b", stamp)), label: "教室", url: mediaUrl("CloudIPC-demo-b", stamp) }
+  ];
+  const { dom, document, videos } = await page({
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        if (!message.refresh) return { ok: true, courseTitle: "数据库系统", currentLiveId: "101", media: makeMedia(1700000000) };
+        if (message.auto) autoRefreshCalls++;
+        if (refreshMode === "ok") return { ok: true, courseTitle: "数据库系统", currentLiveId: "101", media: makeMedia(1700009999) };
+        if (refreshMode === "login") return { ok: false, reason: "login", error: "西电智课登录已过期，请重新登录。" };
+        if (refreshMode === "network") return { ok: false, reason: "network", error: "网络连接失败，请检查网络后重试。" };
+        if (refreshMode === "generating") return { ok: false, reason: "generating", error: "该课次的视频回看仍在生成中。" };
+      }
+    },
+    prepareMedia(win) {
+      const states = new WeakMap();
+      Object.defineProperty(win.HTMLMediaElement.prototype, "paused", { get() { return states.get(this) ?? true; } });
+      win.HTMLMediaElement.prototype.play = function() { states.set(this, false); return Promise.resolve(); };
+      win.HTMLMediaElement.prototype.pause = function() { states.set(this, true); };
+    }
+  });
+  t.after(() => close(dom));
+  const change = (el) => el.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+  document.querySelector("#offset").value = "-4"; change(document.querySelector("#offset"));
+  document.querySelector("#rate").value = "1.5"; change(document.querySelector("#rate"));
+  document.querySelector("#timeline").value = "40"; change(document.querySelector("#timeline"));
+  document.querySelector("#play").click();
+  await flush();
+
+  // Trigger a media load error while playing -> auto-refreshes once, preserves offset/rate/position and resumes playback.
+  videos[0].dispatchEvent(new dom.window.Event("error"));
+  await flush();
+  assert.equal(autoRefreshCalls, 1);
+  assert.match(videos[0].src, /1700009999/);
+  assert.deepEqual(videos.map((v) => v.currentTime), [40, 36]);
+  assert.deepEqual(videos.map((v) => v.playbackRate), [1.5, 1.5]);
+  assert.ok(videos.every((v) => !v.paused));
+  assert.match(document.querySelector("#message").textContent, /已自动续签/);
+
+  // Test login-expired failure on a fresh page: 1 attempt only, shows login link + refresh button, no auto-retry on 2nd error.
+  refreshMode = "login";
+  autoRefreshCalls = 0;
+  const loginFixture = await page({
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        if (!message.refresh) return { ok: true, courseTitle: "数据库系统", currentLiveId: "101", media: makeMedia(1700000000) };
+        if (message.auto) autoRefreshCalls++;
+        if (refreshMode === "login") return { ok: false, reason: "login", error: "西电智课登录已过期，请重新登录。" };
+        if (refreshMode === "network") return { ok: false, reason: "network", error: "网络连接失败，请检查网络后重试。" };
+        return { ok: false, reason: "generating", error: "该课次的视频回看仍在生成中。" };
+      }
+    }
+  });
+  t.after(() => close(loginFixture.dom));
+
+  loginFixture.videos[0].dispatchEvent(new loginFixture.dom.window.Event("error"));
+  await flush();
+  assert.equal(autoRefreshCalls, 1);
+  const loginLink = loginFixture.document.querySelector("#message .message-link");
+  assert.ok(loginLink && loginLink.href.startsWith("https://xdspoc.xidian.edu.cn/"));
+  assert.ok(loginFixture.document.querySelector("#message .message-retry"));
+
+  // A second error does NOT auto-retry.
+  loginFixture.videos[0].dispatchEvent(new loginFixture.dom.window.Event("error"));
+  await flush();
+  assert.equal(autoRefreshCalls, 1);
+
+  // Network error shows retry button without misleading login link.
+  refreshMode = "network";
+  const netFixture = await page({
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        if (!message.refresh) return { ok: true, courseTitle: "数据库系统", currentLiveId: "101", media: makeMedia(1700000000) };
+        return { ok: false, reason: "network", error: "网络连接失败，请检查网络后重试。" };
+      }
+    }
+  });
+  t.after(() => close(netFixture.dom));
+  netFixture.videos[0].dispatchEvent(new netFixture.dom.window.Event("error"));
+  await flush();
+  assert.equal(netFixture.document.querySelector("#message .message-link"), null);
+  assert.ok(netFixture.document.querySelector("#message .message-retry"));
+});
