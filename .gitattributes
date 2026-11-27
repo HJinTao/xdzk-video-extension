@@ -1,0 +1,16 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.zip binary
+*.crx binary
+
+# Exclude development-only files from GitHub auto-generated Source code archives.
+.github export-ignore
+tests export-ignore
+scripts export-ignore
+.editorconfig export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore
+package.json export-ignore
+package-lock.json export-ignore

@@ -4,4 +4,7 @@ dist/
 test-artifacts/
 coverage/
 *.crx
+*.log
 .env
+.DS_Store
+Thumbs.db

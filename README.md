@@ -1,5 +1,10 @@
 # 西电智课 · 录播助手
 
+[![CI](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/ci.yml)
+[![Release](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/Pais1ey/xdzk-video-extension/actions/workflows/release.yml)
+
+[最新 Release](https://github.com/Pais1ey/xdzk-video-extension/releases/latest) · [Chrome / Edge 114+](#安装与配置指南) · [MIT License](LICENSE) · [开发与发版指南](docs/DEVELOPMENT.md)
+
 在电脑上看西电智课回放时，可以让课件和教室画面双路同步播放、直接切换同一门课的全部课次并自动连播、记录每节课的观看进度、按字幕关键词跳转原句，也可将需要的画面保存为 MP4。适用于 Chrome 和 Microsoft Edge 114 及以上版本。
 
 | 想做什么 | 从哪里开始 |
@@ -134,5 +139,5 @@ npm run build
 
 仓库已配置 [`.github/workflows/release.yml`](.github/workflows/release.yml) 与 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：
 
-1. 同步更新 `package.json` 与 `extension/manifest.json` 中的 `version` 字段，提交并合入 `main` 分支（也可直接推送匹配的 `v<版本号>` tag，或在 GitHub Actions 页面手动触发 `Release` 工作流）。
+1. 使用 `npm run version:bump -- <patch|minor|major|版本号>` 同步更新 `package.json`、`package-lock.json` 与 `extension/manifest.json` 的版本号，提交并合入 `main` 分支（也可直接推送匹配的 `v<版本号>` tag，或在 GitHub Actions 页面手动触发 `Release` 工作流）。详细目录结构与贡献说明见 [开发与发版指南](docs/DEVELOPMENT.md)。
 2. GitHub Actions 会自动执行校验、单元测试与打包，按提交记录自动生成中文分类更新说明和 SHA-256 校验值，并发布包含 `xdzk-recorder-<版本号>.zip`、`xdzk-recorder-latest.zip` 与 `.sha256` 附件的 GitHub Release。
