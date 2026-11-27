@@ -4,7 +4,9 @@ import {
   extractLiveId,
   extractWorkDetailId,
   parseCourseLessons,
-  parsePlayVideoHtml
+  parsePlaylistResponseText,
+  parsePlayVideoHtml,
+  parseSubtitleResponseText
 } from "../extension/lib/course-playlist.js";
 import {
   computeWatchStatus,
@@ -69,6 +71,10 @@ test("parses playVideo2Keda infostr into dual camera media and handles error pag
   assert.equal(parsePlayVideoHtml("请先登录").reason, "login");
   assert.equal(parsePlayVideoHtml("视频回看生成中，需要1-3天处理完成").reason, "generating");
   assert.equal(extractWorkDetailId(`var workDetailId = '998877';`), "998877");
+  assert.equal(parsePlaylistResponseText("请先登录").loginRequired, true);
+  assert.deepEqual(parsePlaylistResponseText('[{"id":1}]'), { ok: true, items: [{ id: 1 }] });
+  assert.deepEqual(parseSubtitleResponseText('{"vtt":"WEBVTT\\n\\n00:01.000 --> 00:02.000\\n内容"}'), { text: "WEBVTT\n\n00:01.000 --> 00:02.000\n内容" });
+  assert.deepEqual(parseSubtitleResponseText("<html>请先登录</html>"), { failed: true });
 });
 
 test("watch progress transitions unwatched -> watching -> watched, supports resume and manual toggles", async () => {

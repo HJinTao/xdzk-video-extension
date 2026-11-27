@@ -31,4 +31,9 @@ for (const page of ["popup.html", "player.html"]) {
   if (/<script[^>]+src=["']https?:/i.test(html)) throw new Error("Remote executable code is not allowed");
   for (const match of html.matchAll(/(?:src|href)="([^"#]+)"/g)) await access(join(extension, match[1]));
 }
-console.log(`Manifest, permissions, assets and ${files.length} JavaScript files: OK`);
+const tscBin = join(root, "node_modules", "typescript", "bin", "tsc");
+const typecheck = spawnSync(process.execPath, [tscBin, "-p", join(root, "tsconfig.json")], { encoding: "utf8" });
+if (typecheck.status !== 0) {
+  throw new Error(`TypeScript check failed:\n${typecheck.stdout}${typecheck.stderr}`);
+}
+console.log(`Manifest, permissions, assets, ${files.length} JavaScript files and TypeScript checkJs: OK`);

@@ -12,8 +12,8 @@ export async function buildArchive(rootDir = root) {
   const archive = {};
   async function add(directory, prefix = "") {
     for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-      // Skip hidden OS metadata files (e.g. .DS_Store) so release archives stay clean.
-      if (entry.name.startsWith(".")) continue;
+      // Skip hidden OS metadata files (e.g. .DS_Store) and TypeScript declaration files so release archives stay clean.
+      if (entry.name.startsWith(".") || entry.name.endsWith(".d.ts")) continue;
       const path = join(directory, entry.name);
       const name = prefix + entry.name;
       if (entry.isDirectory()) await add(path, name + "/");

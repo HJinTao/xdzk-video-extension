@@ -10,6 +10,10 @@ function isBufferedSeek(video) {
 }
 
 export class SyncPlayer {
+  /**
+   * @param {HTMLVideoElement[]} videos
+   * @param {{ onState?: (state: any) => void, onError?: (message: string, detail?: any) => void, onEnded?: () => void, interval?: number }} [options]
+   */
   constructor(videos, { onState = () => {}, onError = () => {}, onEnded = () => {}, interval = 250 } = {}) {
     if (!Array.isArray(videos) || videos.length < 1 || videos.length > 2) throw new Error("请至少选择一路画面。");
     this.videos = videos;
@@ -21,6 +25,7 @@ export class SyncPlayer {
     this.leader = 0;
     this.wantPlaying = false;
     this.buffering = new Set();
+    /** @type {Array<{ seek?: number, playing?: boolean, rate?: number }>} */
     this.expected = videos.map(() => ({}));
     this.listeners = [];
     this.generation = 0;

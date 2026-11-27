@@ -10,14 +10,18 @@ import {
   fetchLessonPageInPage,
   fetchLessonSubtitlesInPage,
   parseCourseLessons,
-  parsePlayVideoHtml
+  parsePlaylistResponseText,
+  parsePlayVideoHtml,
+  parseSubtitleResponseText
 } from "./course-playlist.js";
 import { createProgressStore } from "./watch-progress.js";
 
 const storageKey = (tabId) => `tab:${tabId}`;
 const supportedUrl = (url) => isPlatformUrl(url) || isMediaUrl(url);
+const PLAYER_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const PLAYER_SESSION_LIMIT = 30;
 function createTaggedError(message, reason = "") {
-  const error = new Error(message);
+  const error = /** @type {Error & { reason?: string }} */ (new Error(message));
   if (reason) error.reason = reason;
   return error;
 }
@@ -175,9 +179,27 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
     return view(tabId);
   }
 
+  async function pruneStalePlayers(now = Date.now()) {
+    try {
+      const entries = await api.storage.session.get(null);
+      const players = Object.entries(entries)
+        .filter(([key]) => key.startsWith("player:"))
+        .sort((a, b) => (Number(b[1]?.createdAt) || 0) - (Number(a[1]?.createdAt) || 0));
+      const staleKeys = [];
+      players.forEach(([key, entry], index) => {
+        const createdAt = Number(entry?.createdAt) || 0;
+        if (index >= PLAYER_SESSION_LIMIT || (createdAt > 0 && now - createdAt > PLAYER_SESSION_TTL_MS)) {
+          staleKeys.push(key);
+        }
+      });
+      if (staleKeys.length) await api.storage.session.remove(staleKeys);
+    } catch { /* Ignore cleanup errors. */ }
+  }
+
   async function openPlayer(tabId) {
     const current = await view(tabId);
     if (!current.supported || current.media.length < 1) throw new Error("还没有识别到视频，请先播放回放并重新识别。");
+    await pruneStalePlayers();
     const id = crypto.randomUUID();
     const key = `player:${id}`;
     const payload = {
@@ -239,12 +261,7 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
         body: body.toString()
       });
       if (!response.ok) return { ok: false, error: `课程目录请求失败（HTTP ${response.status}）。` };
-      const text = (await response.text()).trim();
-      if (!text || text.includes("请先登录") || text.startsWith("<")) {
-        return { ok: false, loginRequired: true, error: "西电智课登录已过期，请先刷新原回放页并重新登录。" };
-      }
-      const items = JSON.parse(text);
-      return Array.isArray(items) ? { ok: true, items } : { ok: false, error: "课程目录响应格式异常。" };
+      return parsePlaylistResponseText(await response.text());
     });
   }
 
@@ -275,21 +292,7 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
         credentials: "include"
       });
       if (!subResponse.ok) return { failed: true };
-      let text = (await subResponse.text()).replace(/^\ufeff/, "").trim();
-      const hasTiming = /^\s*(?:\d+:)?\d{2}:\d{2}[.,]\d{3}\s+-->/m;
-      if (text.startsWith("{") || text.startsWith('"') || text.startsWith("[")) {
-        let inline = "";
-        try {
-          JSON.parse(text, (_, value) => {
-            if (typeof value === "string" && !inline && hasTiming.test(value)) inline = value;
-            return value;
-          });
-        } catch { /* ignore */ }
-        if (inline) text = inline;
-      }
-      if (hasTiming.test(text)) return { text };
-      if (/^\s*</.test(text) || text.includes("请先登录")) return { failed: true };
-      return { failed: false };
+      return parseSubtitleResponseText(await subResponse.text());
     });
   }
 

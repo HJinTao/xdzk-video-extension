@@ -10,6 +10,9 @@ import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
 import { bindTranscript } from "../extension/lib/transcript.js";
 import { computeWatchStatus, resumeTimeFor } from "../extension/lib/watch-progress.js";
 import { buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref } from "../extension/lib/player-prefs.js";
+import { bindPlaylistPanel } from "../extension/lib/playlist-panel.js";
+import { bindPlayerShortcuts } from "../extension/lib/player-shortcuts.js";
+import { canTriggerAutoRefresh, refreshFailureActions, renderMessageBar } from "../extension/lib/source-recovery.js";
 import { snapshot, mediaUrl, createPlayerStub } from "./fixtures.mjs";
 
 const html = await readFile(new URL("../extension/player.html", import.meta.url), "utf8");
@@ -17,7 +20,7 @@ const code = (await readFile(new URL("../extension/player.js", import.meta.url),
 const flush = () => new Promise((done) => setTimeout(done, 15));
 async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), playlistResult, onMessage, prepareMedia } = {}) {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref, bindPlaylistPanel, bindPlayerShortcuts, canTriggerAutoRefresh, refreshFailureActions, renderMessageBar, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   const captionRequests = [];
   dom.window.chrome = { runtime: { async sendMessage(message) {

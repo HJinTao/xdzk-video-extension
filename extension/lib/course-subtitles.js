@@ -43,14 +43,17 @@ export async function readCourseSubtitles(mediaKey, frameUrl, observedUrl) {
       const disabled = track.mode === "disabled";
       try {
         if (disabled) track.mode = "hidden";
-        const cues = Array.from(track.cues || [], ({ startTime, endTime, text }) => ({ startTime, endTime, text }))
+        const cues = Array.from(track.cues || [], (cue) => {
+          const { startTime, endTime, text } = /** @type {any} */ (cue);
+          return { startTime, endTime, text };
+        })
           .filter((cue) => Number.isFinite(cue.startTime) && Number.isFinite(cue.endTime) && cue.endTime > cue.startTime && typeof cue.text === "string" && cue.text.trim());
         if (cues.length) return { cues };
       } finally { if (disabled) track.mode = "disabled"; }
     }
     for (const element of video.querySelectorAll("track[src]")) {
       if (!isCaption(element.getAttribute("kind") || "subtitles")) continue;
-      const url = parse(element.src);
+      const url = parse(/** @type {HTMLTrackElement} */ (element).src);
       if (allowedFile(url) || isEndpoint(url) || (url?.protocol === "blob:" && url.origin === page.origin)) candidates.add(url.href);
     }
   }
