@@ -1,0 +1,19 @@
+name: 功能建议（Feature Request）
+description: 提出新功能或界面体验改进建议
+title: "[Feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景与痛点
+      description: 描述你在看课或下载时遇到的不便。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望实现方式
+      description: 描述你希望新增或优化的交互与行为。
+    validations:
+      required: true

@@ -1,0 +1,42 @@
+name: 问题反馈（Bug Report）
+description: 反馈播放、目录抓取、字幕或下载异常
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题描述
+      description: 简述你遇到的问题以及期望行为。
+      placeholder: 例如：点击课程目录切换第 5 讲后提示无法获取视频源
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器与版本
+      placeholder: 例如：Chrome 134 / Edge 134（macOS / Windows）
+    validations:
+      required: true
+  - type: input
+    id: extension_version
+    attributes:
+      label: 扩展版本
+      placeholder: 在 chrome://extensions/ 查看，例如：0.5.2
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开西电智课回放页面
+        2. 点击扩展面板中的「同步看课」
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充信息（截图 / 报错提示）
+      description: 如涉及页面 URL，请勿附带 Cookie 或个人隐私信息。
