@@ -371,7 +371,8 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       const currentLiveId = payload.currentLiveId || payload.liveId || "";
       const previousSig = maxSignature(payload.media);
       const latest = currentLiveId && currentLiveId !== payload.liveId ? null : await view(payload.sourceTabId);
-      const latestHasFresher = !!(latest?.supported && latest.media.length >= 1 && (maxSignature(latest.media) > previousSig || latest.media.length > payload.media.length));
+      const sameLesson = !currentLiveId || !latest?.liveId || latest.liveId === currentLiveId;
+      const latestHasFresher = !!(latest?.supported && sameLesson && latest.media.length >= 1 && (maxSignature(latest.media) > previousSig || latest.media.length > payload.media.length));
 
       if (latestHasFresher) {
         payload = {

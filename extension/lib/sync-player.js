@@ -9,18 +9,23 @@ function isBufferedSeek(video) {
   return false;
 }
 
+export const SLEEP_GAP_MS = 15_000;
+
 export class SyncPlayer {
   /**
    * @param {HTMLVideoElement[]} videos
-   * @param {{ onState?: (state: any) => void, onError?: (message: string, detail?: any) => void, onEnded?: () => void, interval?: number }} [options]
+   * @param {{ onState?: (state: any) => void, onError?: (message: string, detail?: any) => void, onEnded?: () => void, onWake?: (detail: { gapMs: number }) => void, interval?: number, offset?: number, sleepGapMs?: number }} [options]
    */
-  constructor(videos, { onState = () => {}, onError = () => {}, onEnded = () => {}, interval = 250 } = {}) {
+  constructor(videos, { onState = () => {}, onError = () => {}, onEnded = () => {}, onWake = () => {}, interval = 250, offset = 0, sleepGapMs = SLEEP_GAP_MS } = {}) {
     if (!Array.isArray(videos) || videos.length < 1 || videos.length > 2) throw new Error("请至少选择一路画面。");
     this.videos = videos;
     this.onState = onState;
     this.onError = onError;
     this.onEnded = onEnded;
-    this.offset = 0;
+    this.onWake = onWake;
+    this.offset = Number.isFinite(offset) && Math.abs(offset) <= 86400 ? offset : 0;
+    this.sleepGapMs = sleepGapMs;
+    this.lastTickAt = Date.now();
     this.rate = 1;
     this.leader = 0;
     this.wantPlaying = false;
@@ -117,13 +122,16 @@ export class SyncPlayer {
     return Math.max(0, (this.videos[leader].currentTime || 0) - (leader === 1 ? this.offset : 0));
   }
 
-  setTime(index, value) {
+  setTime(index, value, { force = false } = {}) {
     const video = this.videos[index];
     if (!Number.isFinite(value) || video.readyState < 1) return;
     const target = Math.max(0, Number.isFinite(video.duration) ? Math.min(value, video.duration) : value);
-    if (Math.abs(video.currentTime - target) < .035) return;
+    if (!force && Math.abs(video.currentTime - target) < .035) return;
     this.expected[index].seek = target;
-    try { video.currentTime = target; } catch { delete this.expected[index].seek; }
+    try {
+      video.currentTime = target;
+      if (!video.seeking) delete this.expected[index].seek;
+    } catch { delete this.expected[index].seek; }
   }
 
   isReady(index) {
@@ -289,6 +297,24 @@ export class SyncPlayer {
     }
   }
 
+  resync({ forceSeek = true } = {}) {
+    if (this.destroyed) return;
+    this.lastTickAt = Date.now();
+    const range = this.range();
+    if (!range) return;
+    const time = Math.max(range.start, Math.min(this.time(), range.end));
+    this.videos.forEach((_, index) => {
+      this.setElementRate(index, this.rate);
+      const target = time + (index === 1 ? this.offset : 0);
+      if (forceSeek || Math.abs(this.videos[index].currentTime - target) > .12) {
+        this.setTime(index, target, { force: forceSeek });
+      }
+    });
+    this.enforceAudio();
+    if (this.wantPlaying) this.resumeIfReady();
+    this.emit();
+  }
+
   finish() {
     if (!this.wantPlaying || this.destroyed) return;
     this.pause();
@@ -297,6 +323,13 @@ export class SyncPlayer {
 
   tick() {
     if (this.destroyed) return;
+    const now = Date.now();
+    const gapMs = now - this.lastTickAt;
+    this.lastTickAt = now;
+    if (this.sleepGapMs > 0 && gapMs >= this.sleepGapMs) {
+      this.onWake({ gapMs });
+      if (this.destroyed) return;
+    }
     const range = this.range();
     if (this.wantPlaying && range && this.time() >= range.end - .06) {
       this.videos.forEach((_, index) => this.setTime(index, range.end + (index === 1 ? this.offset : 0)));

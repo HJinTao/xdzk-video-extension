@@ -46,6 +46,16 @@ test("paired captions keep independent sources, share a single file and retime a
   controls[0].source = source("另一个文件", "file");
   assert.deepEqual(update(2, true), [0, 1]);
   assert.ok(videos.every(v => v.copies.length === 1 && !v.copies[0].cues.length));
+
+  controls[0].source = source("课程共享字幕");
+  controls[1].source = source("课程共享字幕");
+  assert.deepEqual(update(3, true), [0, 0]);
+  const beforeForce = videos[1].copies[0].cues[0];
+  assert.deepEqual(update(3, true), [0, 0]);
+  assert.equal(videos[1].copies[0].cues[0], beforeForce);
+  assert.deepEqual(update(3, true, { force: true }), [0, 0]);
+  assert.notEqual(videos[1].copies[0].cues[0], beforeForce);
+  assert.deepEqual(videos[1].copies[0].cues.map(c => c.startTime), [4, 8]);
 });
 
 function frame(html, resources, responses = {}) {
@@ -150,4 +160,70 @@ test("subtitle controls discard late results, preserve valid imports on failure 
   assert.equal(select.querySelector('[value="file"]'), null);
   assert.equal(select.value, "off");
   assert.equal(new Set(revoked).size, 3);
+});
+
+test("subtitle resync rebuilds active tracks from memory, ignores unrelated textTracks changes and retries only failed course fetches", async (t) => {
+  const dom = new JSDOM("<video></video><div></div>");
+  t.after(() => dom.window.close());
+  const { document, Event, EventTarget, HTMLTrackElement, URL } = dom.window;
+  const video = document.querySelector("video");
+  const panel = document.querySelector("div");
+  const textTracks = new EventTarget();
+  Object.defineProperty(video, "textTracks", { value: textTracks });
+  const tracks = new WeakMap();
+  Object.defineProperty(HTMLTrackElement.prototype, "track", { get() {
+    if (!tracks.has(this)) tracks.set(this, { mode: "disabled", cues: [{ text: "字幕" }] });
+    return tracks.get(this);
+  } });
+  const revoked = [];
+  let fileCount = 0;
+  URL.createObjectURL = () => "blob:resync/" + ++fileCount;
+  URL.revokeObjectURL = (url) => revoked.push(url);
+  let fetches = 0;
+  let shouldFail = true;
+  let trackChanges = 0;
+  const controls = bindSubtitles(panel, video, async () => {
+    fetches++;
+    if (shouldFail) throw new Error("暂时无法读取课程字幕");
+    return { text: vtt };
+  }, () => { trackChanges++; });
+
+  controls.setSource("lesson-resync");
+  controls.ensureCourse();
+  await new Promise((done) => setTimeout(done, 10));
+  assert.equal(fetches, 1);
+  assert.equal(controls.track, null);
+
+  // Without retryCourse, resync does not refetch; with retryCourse, a failed course fetch retries.
+  assert.equal(controls.resync(), false);
+  shouldFail = false;
+  assert.equal(controls.resync({ retryCourse: true }), true);
+  await new Promise((done) => setTimeout(done, 10));
+  assert.equal(fetches, 2);
+  const firstTrackEl = video.querySelector("track");
+  firstTrackEl.dispatchEvent(new Event("load"));
+  const firstTrack = controls.track;
+  assert.ok(firstTrack);
+
+  // Unrelated textTracks change (e.g. from paired copy track) does not fire onTrackChange.
+  const changesBefore = trackChanges;
+  textTracks.dispatchEvent(new Event("change"));
+  assert.equal(trackChanges, changesBefore);
+
+  // resync() replaces the <track> element using cached VTT without another network fetch.
+  assert.equal(controls.resync(), true);
+  assert.equal(fetches, 2);
+  const allTracks = video.querySelectorAll("track");
+  assert.equal(allTracks.length, 2);
+  allTracks[1].dispatchEvent(new Event("load"));
+  assert.equal(video.querySelectorAll("track").length, 1);
+  assert.notEqual(controls.track, firstTrack);
+  assert.equal(revoked.includes("blob:resync/1"), true);
+
+  // Manually turning captions off prevents retryCourse from re-enabling them.
+  const select = panel.querySelector("select");
+  select.value = "off";
+  select.dispatchEvent(new Event("change"));
+  assert.equal(controls.resync({ retryCourse: true }), false);
+  assert.equal(fetches, 2);
 });

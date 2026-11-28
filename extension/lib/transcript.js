@@ -56,8 +56,10 @@ export function bindTranscript(panel, seekToCue) {
     button.title = outside ? "超出两路画面的共同播放范围" : "";
   }
 
-  function setTrack(next) {
+  function setTrack(next, { preserveView = false } = {}) {
     if (next === track) return;
+    const previousScrollTop = preserveView ? list.scrollTop : 0;
+    const previousQuery = preserveView ? search.value : "";
     track?.removeEventListener("cuechange", highlight);
     track = next;
     rows.clear();
@@ -81,8 +83,8 @@ export function bindTranscript(panel, seekToCue) {
       setAvailable(cue, button);
     }
     list.replaceChildren(fragment);
-    list.scrollTop = 0;
-    search.value = "";
+    list.scrollTop = previousScrollTop;
+    search.value = previousQuery;
     filter();
     track?.addEventListener("cuechange", highlight);
     highlight();
@@ -95,6 +97,7 @@ export function bindTranscript(panel, seekToCue) {
   });
   return {
     setTrack,
+    sync: highlight,
     followCurrent,
     setWindow(range, offset = 0) {
       const nextStart = range ? range.start + offset : undefined;

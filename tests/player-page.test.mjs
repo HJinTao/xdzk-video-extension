@@ -776,3 +776,97 @@ test("custom dropdowns, segmented controls, speed popover and timeline progress 
   sourceTrigger.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   assert.equal(sourceMenu.hidden, true);
 });
+
+test("long background idle and expired-source refresh automatically rebuild subtitle tracks without losing transcript search", async (t) => {
+  const cues = [
+    { startTime: 5, endTime: 12, text: "关系代数简介" },
+    { startTime: 20, endTime: 28, text: "自然连接与投影" }
+  ];
+  const createdCopies = [];
+  let blobCount = 0;
+  let refreshCount = 0;
+  const makeMedia = (stamp) => [
+    { key: mediaKey(mediaUrl("CloudIPC-demo-a", stamp)), label: "课件", url: mediaUrl("CloudIPC-demo-a", stamp) },
+    { key: mediaKey(mediaUrl("CloudIPC-demo-b", stamp)), label: "教室", url: mediaUrl("CloudIPC-demo-b", stamp) }
+  ];
+  const { dom, document, videos } = await page({
+    captionResult: () => ({ ok: true, cues }),
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        if (message.refresh) refreshCount++;
+        const stamp = message.refresh ? 1700005000 : 1700000000;
+        return { ok: true, courseTitle: "数据库系统", currentLiveId: "101", media: makeMedia(stamp) };
+      }
+    },
+    prepareMedia(win) {
+      const trackMap = new WeakMap();
+      Object.defineProperty(win.HTMLTrackElement.prototype, "track", {
+        get() {
+          if (!trackMap.has(this)) {
+            trackMap.set(this, Object.assign(new win.EventTarget(), { cues, activeCues: [cues[1]], mode: "disabled" }));
+          }
+          return trackMap.get(this);
+        }
+      });
+      win.URL.createObjectURL = () => "blob:idle-captions/" + ++blobCount;
+      win.URL.revokeObjectURL = () => {};
+      win.VTTCue = class { constructor(startTime, endTime, text) { Object.assign(this, { startTime, endTime, text }); } };
+      win.HTMLMediaElement.prototype.addTextTrack = () => {
+        const copy = { cues: [], addCue(c) { this.cues.push(c); }, removeCue(c) { this.cues.splice(this.cues.indexOf(c), 1); } };
+        createdCopies.push(copy);
+        return copy;
+      };
+    }
+  });
+  t.after(() => close(dom));
+
+  const { Event } = dom.window;
+  const loadPendingTracks = () => {
+    videos.forEach((video) => {
+      const tracks = video.querySelectorAll("track");
+      if (tracks.length) tracks[tracks.length - 1].dispatchEvent(new Event("load"));
+    });
+  };
+
+  loadPendingTracks();
+  const offset = document.querySelector("#offset");
+  offset.value = "4";
+  offset.dispatchEvent(new Event("change"));
+  assert.deepEqual(createdCopies[0].cues.map((c) => c.startTime), [9, 24]);
+
+  // Open review panel and enter a search query.
+  document.querySelector("#toggle-review").click();
+  const search = document.querySelector("#cue-search");
+  search.value = "投影";
+  search.dispatchEvent(new Event("input"));
+  assert.match(document.querySelector("#cue-count").textContent, /1 \/ 2/);
+
+  // Simulate tab hidden for 60s then returning visible.
+  let hidden = true;
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  const realNow = dom.window.Date.now;
+  let fakeNow = realNow();
+  dom.window.Date.now = () => fakeNow;
+  t.after(() => { dom.window.Date.now = realNow; });
+
+  document.dispatchEvent(new Event("visibilitychange"));
+  fakeNow += 60_000;
+  hidden = false;
+  const blobsBeforeWake = blobCount;
+  document.dispatchEvent(new Event("visibilitychange"));
+  assert.ok(blobCount > blobsBeforeWake, "returning from long idle rebuilds caption tracks");
+  loadPendingTracks();
+  assert.equal(search.value, "投影", "automatic caption resync preserves user search query");
+  assert.deepEqual(createdCopies[0].cues.map((c) => c.startTime), [9, 24]);
+
+  // Triggering expired-source auto-refresh also rebuilds caption tracks and keeps offset intact.
+  const blobsBeforeRefresh = blobCount;
+  videos[0].dispatchEvent(new Event("error"));
+  await flush();
+  assert.equal(refreshCount, 1);
+  assert.ok(blobCount > blobsBeforeRefresh, "auto-refresh rebuilds caption tracks after video reload");
+  loadPendingTracks();
+  assert.equal(offset.value, "4");
+  assert.deepEqual(createdCopies[0].cues.map((c) => c.startTime), [9, 24]);
+  assert.equal(search.value, "投影");
+});

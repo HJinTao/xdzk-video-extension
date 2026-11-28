@@ -40,8 +40,10 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
   let key = "";
   let revision = 0;
   let tried = false;
+  let failedCourse = false;
   let loading = false;
   let display = true;
+  let lastTrackMode = "";
   let active, pending, course, local;
 
   function selectedTrack() {
@@ -65,8 +67,9 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     notify();
     return revision;
   }
-  function fail(text) {
+  function fail(text, mode = "") {
     loading = false;
+    if (mode === "course") failedCourse = true;
     remove(pending);
     pending = null;
     select.value = selectedTrack() ? active.mode : "off";
@@ -81,11 +84,11 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     const url = view.URL.createObjectURL(new view.Blob([data.vtt], { type: "text/vtt;charset=utf-8" }));
     pending = { element, url, mode, data };
     element.addEventListener("error", () => {
-      if (revision === version && pending?.element === element) fail("字幕加载失败，请重新选择课程字幕或导入本地文件。");
+      if (revision === version && pending?.element === element) fail("字幕加载失败，请重新选择课程字幕或导入本地文件。", mode);
     });
     element.addEventListener("load", () => {
       if (revision !== version || pending?.element !== element) return;
-      if (!element.track.cues?.length) { fail("这份字幕没有可显示的内容，请导入有效的字幕文件。"); return; }
+      if (!element.track.cues?.length) { fail("这份字幕没有可显示的内容，请导入有效的字幕文件。", mode); return; }
       remove(active);
       active = pending;
       pending = null;
@@ -95,8 +98,13 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
         let option = /** @type {HTMLOptionElement | null} */ (select.querySelector('[value="file"]'));
         if (!option) { option = doc.createElement("option"); option.value = "file"; select.append(option); }
         option.textContent = data.label;
-      } else course = data;
-      element.track.mode = display ? "showing" : "hidden";
+      } else {
+        course = data;
+        failedCourse = false;
+      }
+      const nextMode = display ? "showing" : "hidden";
+      lastTrackMode = nextMode;
+      element.track.mode = nextMode;
       select.value = mode;
       selectUi.sync();
       notify();
@@ -110,7 +118,14 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
     tried = true;
     const mode = select.value;
     const version = start();
-    if (mode === "off") { remove(active); active = null; onTrackChange(null); return; }
+    if (mode === "off") {
+      failedCourse = false;
+      lastTrackMode = "";
+      remove(active);
+      active = null;
+      onTrackChange(null);
+      return;
+    }
     loading = true;
     onTrackChange(selectedTrack());
     try {
@@ -122,7 +137,7 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
         data = { label: "课程字幕", vtt: toWebVtt(result) };
       }
       attach(mode, data, version);
-    } catch (error) { if (revision === version) fail(error.message); }
+    } catch (error) { if (revision === version) fail(error.message, mode); }
   }
   select.addEventListener("change", selectTrack);
   container.querySelector(".subtitle-import").addEventListener("click", () => input.click());
@@ -138,10 +153,13 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
       if (!/\.(srt|vtt)$/i.test(file.name)) throw new Error("请选择 SRT 或 VTT 字幕文件。");
       const text = await file.text();
       if (revision === version) attach("file", { label: file.name, vtt: toWebVtt({ text }) }, version);
-    } catch (error) { if (revision === version) fail(error.message); }
+    } catch (error) { if (revision === version) fail(error.message, "file"); }
   });
   video.textTracks?.addEventListener?.("change", () => {
     if (active && !pending && status.hidden) {
+      const currentMode = active.element.track?.mode || "";
+      if (currentMode === lastTrackMode) return;
+      lastTrackMode = currentMode;
       const track = selectedTrack();
       select.value = track ? active.mode : "off";
       selectUi.sync();
@@ -159,12 +177,31 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
       const track = selectedTrack();
       display = visible;
       const mode = visible ? "showing" : "hidden";
-      if (track && track.mode !== mode) track.mode = mode;
+      if (track && track.mode !== mode) {
+        lastTrackMode = mode;
+        track.mode = mode;
+      }
     },
     ensureCourse() {
       if (!key || tried) return;
       select.value = "course";
       void selectTrack();
+    },
+    resync({ retryCourse = false } = {}) {
+      if (!key || pending || loading) return false;
+      if (active) {
+        const { mode, data } = active;
+        const version = start();
+        attach(mode, data, version);
+        return true;
+      }
+      if (retryCourse && failedCourse) {
+        failedCourse = false;
+        select.value = "course";
+        void selectTrack();
+        return true;
+      }
+      return false;
     },
     setSource(nextKey) {
       container.hidden = !nextKey;
@@ -172,6 +209,8 @@ export function bindSubtitles(container, video, readCourse, onTrackChange = () =
       start();
       key = nextKey;
       tried = false;
+      failedCourse = false;
+      lastTrackMode = "";
       remove(active);
       active = course = local = null;
       select.querySelector('[value="file"]')?.remove();

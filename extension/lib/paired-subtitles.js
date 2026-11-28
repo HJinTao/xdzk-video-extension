@@ -3,12 +3,12 @@
 export function bindPairedSubtitles(videos, controls) {
   const copies = videos.map(() => ({ track: null, origin: null, shift: 0 }));
 
-  function updateCopy(index, origin, shift, visible) {
+  function updateCopy(index, origin, shift, visible, force = false) {
     const copy = copies[index];
     if (!origin && !copy.origin) return;
     if (!copy.track) copy.track = videos[index].addTextTrack("captions", "双路共享字幕");
     const target = copy.track;
-    if (copy.origin !== origin || copy.shift !== shift) {
+    if (force || copy.origin !== origin || copy.shift !== shift) {
       target.mode = "hidden";
       for (const cue of Array.from(target.cues || [])) target.removeCue(cue);
       const { VTTCue } = videos[index].ownerDocument.defaultView;
@@ -29,7 +29,7 @@ export function bindPairedSubtitles(videos, controls) {
     if (target.mode !== mode) target.mode = mode;
   }
 
-  return function update(offset, visible) {
+  return function update(offset, visible, { force = false } = {}) {
     const sources = controls.map(control => control.source);
     const [first, second] = sources;
     const sameCourse = first?.mode === "course" && second?.mode === "course" && first.vtt === second.vtt;
@@ -44,7 +44,7 @@ export function bindPairedSubtitles(videos, controls) {
     controls.forEach((control, i) => control.setDisplay(visible && origins[i] === i));
     origins.forEach((source, i) => {
       const origin = source !== null && source !== i ? sources[source].track : null;
-      updateCopy(i, origin, i === 1 ? offset : -offset, visible);
+      updateCopy(i, origin, i === 1 ? offset : -offset, visible, force);
     });
     return origins;
   };

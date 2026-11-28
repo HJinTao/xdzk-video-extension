@@ -349,3 +349,48 @@ test("single-video SyncPlayer supports play, seek, rate, mute, buffering and end
   assert.equal(endedCount, 1);
   assert.equal(errors.length, 0);
 });
+
+test("SyncPlayer supports initial offset, resync force-seek and sleep-gap wake detection", async (t) => {
+  const emittedOffsets = [];
+  const wakeEvents = [];
+  const videos = [new Video(120), new Video(120)];
+  let seekCounts = [0, 0];
+  videos.forEach((video, index) => {
+    video.addEventListener("seeking", () => { seekCounts[index]++; });
+  });
+  const engine = new SyncPlayer(videos, {
+    interval: 0,
+    offset: -5,
+    sleepGapMs: 1000,
+    onState: (state) => emittedOffsets.push(state.offset),
+    onWake: (detail) => wakeEvents.push(detail)
+  });
+  t.after(() => engine.destroy());
+
+  // Initial state reports the configured offset directly without flapping through 0.
+  assert.deepEqual(emittedOffsets, [-5]);
+
+  engine.seek(30); await flush();
+  assert.deepEqual(videos.map((v) => v.currentTime), [30, 25]);
+  seekCounts = [0, 0];
+
+  // forceSeek: false skips seeking aligned videos, while forceSeek: true forces a seek flush.
+  engine.resync({ forceSeek: false }); await flush();
+  assert.deepEqual(seekCounts, [0, 0]);
+
+  // Simulate a temporary drift-correction rate on the follower and verify resync restores engine.rate.
+  engine.setElementRate(1, 1.04); await flush();
+  assert.equal(videos[1].playbackRate, 1.04);
+  engine.resync({ forceSeek: true }); await flush();
+  assert.deepEqual(seekCounts, [1, 1]);
+  assert.deepEqual(videos.map((v) => v.playbackRate), [1, 1]);
+  assert.equal(engine.wantPlaying, false);
+
+  // Simulating a wall-clock sleep gap triggers onWake once.
+  engine.lastTickAt = Date.now() - 5000;
+  engine.tick();
+  assert.equal(wakeEvents.length, 1);
+  assert.ok(wakeEvents[0].gapMs >= 5000);
+  engine.tick();
+  assert.equal(wakeEvents.length, 1);
+});

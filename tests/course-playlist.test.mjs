@@ -342,3 +342,45 @@ test("controller switches into a single-camera lesson without failing continuous
   assert.equal(switched.media.length, 1);
   assert.equal(switched.media[0].label, "课件");
 });
+
+test("refreshing an idle player ignores a source tab that navigated to another lesson", async () => {
+  const { api, createdTabs } = createApi({
+    url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100"
+  });
+  const freshLesson100A = mediaUrl("CloudIPC-demo-a", 1700008888);
+  const freshLesson100B = mediaUrl("CloudIPC-demo-b", 1700008888);
+  const encoded100 = encodeURIComponent(JSON.stringify({ videoPath: { pptVideo: freshLesson100A, teacherTrack: freshLesson100B } }));
+  api.scripting.executeScript = async ({ func, args }) => {
+    if (func.name === "fetchLessonPageInPage") {
+      assert.equal(args[0], "100");
+      return [{ result: { ok: true, html: `<script>var infostr = "${encoded100}";</script>` } }];
+    }
+    return [];
+  };
+
+  const controller = createController(api);
+  await controller.dispatch({
+    type: "PAGE_SNAPSHOT",
+    snapshot: { ...snapshot, url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100" }
+  }, { ...pageSender, url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=100" });
+  await controller.dispatch({ type: "OPEN_PLAYER", tabId: 1 }, popupSender);
+  const playerId = new URL(createdTabs[0].url).searchParams.get("id");
+  const playerSender = { id: "test-extension", url: createdTabs[0].url };
+
+  // Source tab later navigates to lesson 200 with newer signatures.
+  await controller.dispatch({
+    type: "PAGE_SNAPSHOT",
+    snapshot: {
+      ...snapshot,
+      url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=200",
+      media: [
+        { url: mediaUrl("CloudIPC-200-a", 1700009999), videoIndex: 0 },
+        { url: mediaUrl("CloudIPC-200-b", 1700009999), videoIndex: 1 }
+      ]
+    }
+  }, { ...pageSender, documentId: "doc-lesson-200", url: "http://newes.chaoxing.com/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=200" });
+
+  const refreshed = await controller.dispatch({ type: "GET_PLAYER", id: playerId, refresh: true, auto: true }, playerSender);
+  assert.equal(refreshed.currentLiveId, "100");
+  assert.match(refreshed.media[0].url, /CloudIPC-demo-a.*1700008888/);
+});
