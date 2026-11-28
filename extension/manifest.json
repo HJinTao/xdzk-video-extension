@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "西电智课 · 录播助手",
   "description": "同步观看西电智课的课件和教室画面，搜索字幕并跳转，也可将录播下载到本地。",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "minimum_chrome_version": "114",
   "permissions": [
     "activeTab",
