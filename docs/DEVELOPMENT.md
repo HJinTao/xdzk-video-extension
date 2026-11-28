@@ -28,6 +28,15 @@ npm run build      # 生成精简版扩展 ZIP 安装包与 SHA-256 校验值
 
 在浏览器调试时，打开 `chrome://extensions/`（或 `edge://extensions/`），开启开发者模式后直接加载仓库中的 `extension/` 目录；每次修改后点击扩展卡片的「重新加载」即可生效。
 
+## 提交规范（Conventional Commits）
+
+为保证自动生成的 GitHub Release 更新说明对中文用户友好，提交信息统一采用**「英文类型前缀 + 中文摘要」**格式（`type(scope): 中文描述`）：
+
+- `feat: 支持单流课程回放与双流无缝降级`（进入发版说明的「新增功能」）
+- `fix: 修复后台唤醒或源刷新后的字幕与时钟失步`（进入发版说明的「问题修复」）
+- `refactor: 拆分播放器控制模块并开启 checkJs 类型检查`（进入发版说明的「其他改进与文档」）
+- `chore: release v0.7.0` 或 `chore: 发布 v0.7.0`（纯版本号递增提交会在发版说明中自动过滤）
+
 ## 发布新版本
 
 1. 使用内置脚本同步更新 `package.json`、`package-lock.json` 与 `extension/manifest.json` 的版本号：

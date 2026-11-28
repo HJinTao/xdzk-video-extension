@@ -11,9 +11,15 @@ test("categorizes conventional commits into features, fixes and other improvemen
     { hash: "a53b2ff123", subject: "fix: prevent auto-pause after seeking" },
     { hash: "6894253456", subject: "feat(playlist): scrape course playlist" },
     { hash: "09f2a88789", subject: "docs: generalize README installation guide" },
+    { hash: "c0ffee1234", subject: "feat：支持全角冒号与中文提交摘要" },
+    { hash: "19f847a999", subject: "chore: release v0.7.0" },
+    { hash: "29f847a888", subject: "chore(release): 发布 v0.7.0" },
     { hash: "deadbeef00", subject: "Merge pull request #1 from user/branch" }
   ]);
-  assert.deepEqual(groups.features, ["- scrape course playlist (`6894253`)"]);
+  assert.deepEqual(groups.features, [
+    "- scrape course playlist (`6894253`)",
+    "- 支持全角冒号与中文提交摘要 (`c0ffee1`)"
+  ]);
   assert.deepEqual(groups.fixes, ["- prevent auto-pause after seeking (`a53b2ff`)"]);
   assert.deepEqual(groups.others, ["- generalize README installation guide (`09f2a88`)"]);
 });

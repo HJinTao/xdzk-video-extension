@@ -7,20 +7,28 @@ const root = resolve(import.meta.dirname, "..");
 
 function stripPrefix(subject) {
   return String(subject || "")
-    .replace(/^(?:feat|fix|docs|chore|ci|build|refactor|style|test|perf|revert)(?:\([^)]+\))?!?:\s*/i, "")
+    .replace(/^(?:feat|fix|docs|chore|ci|build|refactor|style|test|perf|revert)(?:\([^)]+\))?![:：]\s*/i, "")
+    .replace(/^(?:feat|fix|docs|chore|ci|build|refactor|style|test|perf|revert)(?:\([^)]+\))?[:：]\s*/i, "")
     .trim();
+}
+
+function isReleaseBumpCommit(subject, strippedText) {
+  if (/^(?:Merge\s+(?:pull request|branch)\b)/i.test(subject)) return true;
+  const candidate = strippedText || subject;
+  return /^(?:release|发布)\s*v?\d+\.\d+\.\d+$/i.test(candidate.trim());
 }
 
 export function categorizeCommits(commits = []) {
   const groups = { features: [], fixes: [], others: [] };
   for (const entry of commits) {
     const subject = String(entry?.subject || "").trim();
-    if (!subject || /^Merge\s+(?:pull request|branch)\b/i.test(subject)) continue;
-    const hash = entry?.hash ? String(entry.hash).slice(0, 7) : "";
+    if (!subject) continue;
     const text = stripPrefix(subject) || subject;
+    if (isReleaseBumpCommit(subject, text)) continue;
+    const hash = entry?.hash ? String(entry.hash).slice(0, 7) : "";
     const line = hash ? `- ${text} (\`${hash}\`)` : `- ${text}`;
-    if (/^feat(?:\([^)]+\))?!?:/i.test(subject)) groups.features.push(line);
-    else if (/^fix(?:\([^)]+\))?!?:/i.test(subject)) groups.fixes.push(line);
+    if (/^feat(?:\([^)]+\))?![:：]|^feat(?:\([^)]+\))?[:：]/i.test(subject)) groups.features.push(line);
+    else if (/^fix(?:\([^)]+\))?![:：]|^fix(?:\([^)]+\))?[:：]/i.test(subject)) groups.fixes.push(line);
     else groups.others.push(line);
   }
   return groups;
