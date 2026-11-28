@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { mediaKey } from "../extension/lib/media.js";
 import { readCourseSubtitles } from "../extension/lib/course-subtitles.js";
 import { bindSubtitles, toWebVtt } from "../extension/lib/subtitles.js";
-import { bindPairedSubtitles } from "../extension/lib/paired-subtitles.js";
+import { bindPairedSubtitles, resolveCourseSubtitleAnchor } from "../extension/lib/paired-subtitles.js";
 import { mediaUrl, pageUrl } from "./fixtures.mjs";
 
 const endpoint = new URL("getVideoSubtitles2Vtt?workDetailId=200", pageUrl).href;
@@ -56,6 +56,21 @@ test("paired captions keep independent sources, share a single file and retime a
   assert.deepEqual(update(3, true, { force: true }), [0, 0]);
   assert.notEqual(videos[1].copies[0].cues[0], beforeForce);
   assert.deepEqual(videos[1].copies[0].cues.map(c => c.startTime), [4, 8]);
+
+  // Anchoring shared course captions to camera 1 shifts camera 0's copy by -offset.
+  assert.deepEqual(update(3, true, { courseAnchor: 1 }), [1, 1]);
+  assert.equal(controls[0].visible, false);
+  assert.equal(controls[1].visible, true);
+  assert.equal(videos[1].copies[0].mode, "disabled");
+  assert.equal(videos[0].copies[0].mode, "showing");
+  assert.deepEqual(videos[0].copies[0].cues.map(c => [c.startTime, c.endTime]), [[0, 1], [2, 6]]);
+
+  // resolveCourseSubtitleAnchor prefers classroom role/label, falls back to non-slide, then 0.
+  assert.equal(resolveCourseSubtitleAnchor([{ label: "课件", role: "slide" }, { label: "自定义名称", role: "classroom" }]), 1);
+  assert.equal(resolveCourseSubtitleAnchor([{ label: "教室" }, { label: "课件" }]), 0);
+  assert.equal(resolveCourseSubtitleAnchor([{ label: "课件" }, { label: "画面 2" }]), 1);
+  assert.equal(resolveCourseSubtitleAnchor([{ label: "画面 1" }, { label: "画面 2" }]), 0);
+  assert.equal(resolveCourseSubtitleAnchor([{ label: "课件" }]), 0);
 });
 
 function frame(html, resources, responses = {}) {

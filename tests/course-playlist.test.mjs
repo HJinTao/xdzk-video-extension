@@ -18,6 +18,7 @@ import {
 import {
   buildAudioPref,
   channelRole,
+  mediaRole,
   mergePlayerPrefs,
   normalizePlayerPrefs,
   resolveAudioPref,
@@ -158,9 +159,25 @@ test("controller fetches course playlist, switches lessons seamlessly and loads 
   assert.equal(switched.currentLiveId, "102");
   assert.deepEqual(switched.media.map((m) => m.label), ["课件", "教室"]);
 
-  const sub = await controller.dispatch({ type: "GET_SUBTITLES", id: playerId, key: switched.media[0].key }, playerSender);
-  assert.equal(sub.ok, true);
-  assert.match(sub.text, /下一节课字幕/);
+  // Both cameras requesting switched-lesson subtitles concurrently share one platform fetch.
+  let subtitleFetches = 0;
+  const origExec = api.scripting.executeScript;
+  api.scripting.executeScript = async (options) => {
+    if (options.func.name === "fetchLessonSubtitlesInPage") {
+      subtitleFetches++;
+      await new Promise((done) => setTimeout(done, 5));
+    }
+    return origExec(options);
+  };
+  const [sub0, sub1] = await Promise.all([
+    controller.dispatch({ type: "GET_SUBTITLES", id: playerId, key: switched.media[0].key }, playerSender),
+    controller.dispatch({ type: "GET_SUBTITLES", id: playerId, key: switched.media[1].key }, playerSender)
+  ]);
+  assert.equal(sub0.ok, true);
+  assert.equal(sub1.ok, true);
+  assert.equal(sub0.text, sub1.text);
+  assert.match(sub0.text, /下一节课字幕/);
+  assert.equal(subtitleFetches, 1);
 
   const saved = await controller.dispatch({
     type: "SAVE_PROGRESS", liveId: "102", courseKey: playlist.courseKey, time: 950, duration: 1000, ended: false
@@ -269,9 +286,14 @@ test("player-prefs normalizes, layers global/course preferences, matches camera 
   assert.equal(channelRole("课件画面"), "slide");
   assert.equal(channelRole("教室全景"), "classroom");
   assert.equal(channelRole("画面 1"), "");
+  assert.equal(mediaRole({ label: "自定义名称", role: "classroom" }), "classroom");
+  assert.equal(mediaRole({ label: "课件" }), "slide");
 
   let prefs = normalizePlayerPrefs();
   assert.deepEqual(prefs, { autoPlayNext: true, rate: 1, volume: 1, captionsEnabled: true, audio: null, courses: {} });
+  // Without an explicit audio preference, default to the classroom camera when present.
+  assert.equal(resolveAudioPref(prefs, "code:CS101", [{ label: "课件", role: "slide" }, { label: "教室", role: "classroom" }]), 1);
+  assert.equal(resolveAudioPref(prefs, "code:CS101", [{ label: "画面 1" }, { label: "画面 2" }]), 0);
 
   const classroomAudio = buildAudioPref(1, [{ label: "课件" }, { label: "教室" }]);
   assert.deepEqual(classroomAudio, { mode: "channel", role: "classroom", index: 1 });

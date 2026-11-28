@@ -29,6 +29,7 @@ function createTaggedError(message, reason = "") {
 export function createController(api, { fetch: fetchImpl = globalThis.fetch } = {}) {
   const queues = new Map();
   const closedTabs = new Set();
+  const pendingSubtitles = new Map();
   const progressStore = createProgressStore(api.storage.local);
 
   function enqueue(tabId, task) {
@@ -279,7 +280,10 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
   }
 
   async function fetchLessonSubtitles(tabId, sourceOrigin, liveId) {
-    return runPlatformTask(tabId, sourceOrigin, fetchLessonSubtitlesInPage, [liveId], async (origin, doFetch) => {
+    const cacheKey = `${tabId}|${sourceOrigin}|${liveId}`;
+    const inflight = pendingSubtitles.get(cacheKey);
+    if (inflight) return inflight;
+    const task = runPlatformTask(tabId, sourceOrigin, fetchLessonSubtitlesInPage, [liveId], async (origin, doFetch) => {
       const pageResponse = await doFetch(`${origin}/xidianpj/live/viewNewCourseLive1?isStudent=1&liveId=${encodeURIComponent(liveId)}`, {
         credentials: "include"
       });
@@ -293,7 +297,11 @@ export function createController(api, { fetch: fetchImpl = globalThis.fetch } = 
       });
       if (!subResponse.ok) return { failed: true };
       return parseSubtitleResponseText(await subResponse.text());
+    }).finally(() => {
+      if (pendingSubtitles.get(cacheKey) === task) pendingSubtitles.delete(cacheKey);
     });
+    pendingSubtitles.set(cacheKey, task);
+    return task;
   }
 
   async function getPlaylist(message) {

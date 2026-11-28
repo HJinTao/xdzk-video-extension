@@ -11,10 +11,15 @@ export function channelRole(label = "") {
   return "";
 }
 
+export function mediaRole(item) {
+  if (item?.role === "slide" || item?.role === "classroom") return item.role;
+  return channelRole(item?.label);
+}
+
 export function buildAudioPref(audioIndex, pair = []) {
   if (audioIndex === -1) return { mode: "muted" };
   if (audioIndex !== 0 && audioIndex !== 1) return null;
-  const role = channelRole(pair[audioIndex]?.label);
+  const role = mediaRole(pair[audioIndex]);
   return role ? { mode: "channel", role, index: audioIndex } : { mode: "channel", index: audioIndex };
 }
 
@@ -136,10 +141,13 @@ export function mergePlayerPrefs(existing, patch = {}, now = Date.now()) {
 export function resolveAudioPref(prefs, courseKey = "", pair = []) {
   const cleanKey = normalizeCourseKey(courseKey);
   const candidate = (cleanKey && prefs?.courses?.[cleanKey]?.audio) || prefs?.audio || null;
-  if (!candidate) return 0;
+  if (!candidate) {
+    const classroom = pair.findIndex((item) => mediaRole(item) === "classroom");
+    return classroom >= 0 ? classroom : 0;
+  }
   if (candidate.mode === "muted") return -1;
   if (candidate.role) {
-    const matched = pair.findIndex((item) => channelRole(item?.label) === candidate.role);
+    const matched = pair.findIndex((item) => mediaRole(item) === candidate.role);
     if (matched >= 0) return matched;
   }
   if (candidate.index === 0 || candidate.index === 1) return candidate.index;

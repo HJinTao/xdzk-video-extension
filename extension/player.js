@@ -1,12 +1,12 @@
 import { SyncPlayer, recordingOffset } from "./lib/sync-player.js";
 import { bindSubtitles } from "./lib/subtitles.js";
-import { bindPairedSubtitles } from "./lib/paired-subtitles.js";
+import { bindPairedSubtitles, resolveCourseSubtitleAnchor } from "./lib/paired-subtitles.js";
 import { createLecturePlayer } from "./lib/lecture-player.js";
 import { bindPlaybackSpeed } from "./lib/playback-speed.js";
 import { bindTranscript } from "./lib/transcript.js";
 import { formatClock } from "./lib/media.js";
 import { resumeTimeFor } from "./lib/watch-progress.js";
-import { buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref } from "./lib/player-prefs.js";
+import { buildAudioPref, mediaRole, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref } from "./lib/player-prefs.js";
 import { bindPlaylistPanel } from "./lib/playlist-panel.js";
 import { bindPlayerShortcuts } from "./lib/player-shortcuts.js";
 import { canTriggerAutoRefresh, refreshFailureActions, renderMessageBar } from "./lib/source-recovery.js";
@@ -48,7 +48,6 @@ let lastProgressSavedAt = 0;
 let lastSavedTime = -1;
 let initialResumeApplied = false;
 let pendingStart = null;
-let pendingSubtitleResync = null;
 let lastTranscriptSignature = "";
 let hiddenAt = 0;
 const players = [];
@@ -169,7 +168,10 @@ function applyGlobalPrefs(rawPrefs) {
 
 function refreshCaptions({ forceCopy = false } = {}) {
   if (changingSources) return;
-  const origins = updateCaptionPair(captionOffset, captionsEnabled, { force: forceCopy });
+  const origins = updateCaptionPair(captionOffset, captionsEnabled, {
+    force: forceCopy,
+    courseAnchor: singleMode ? 0 : resolveCourseSubtitleAnchor(selectedPair())
+  });
   const origin = origins[reviewIndex];
   reviewClock = origin ?? reviewIndex;
   transcript.setWindow(engine?.range(), reviewClock === 1 ? captionOffset : 0);
@@ -199,10 +201,10 @@ function resyncCaptions({ retryCourse = false } = {}) {
   refreshCaptions({ forceCopy: true });
 }
 
-function handleSystemWake() {
+function recoverAfterIdle({ forceSeek }) {
   hiddenAt = 0;
   if (!engine || switchingLesson || autoRefreshing) return;
-  engine.resync({ forceSeek: true });
+  engine.resync({ forceSeek });
   resyncCaptions();
 }
 
@@ -213,9 +215,7 @@ function handleVisibilityChange() {
   }
   const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
   hiddenAt = 0;
-  if (hiddenMs < IDLE_RESYNC_MS || !engine || switchingLesson || autoRefreshing) return;
-  engine.resync({ forceSeek: !engine.wantPlaying });
-  resyncCaptions();
+  if (hiddenMs >= IDLE_RESYNC_MS) recoverAfterIdle({ forceSeek: !engine?.wantPlaying });
 }
 
 function setPrimary(index) {
@@ -296,16 +296,26 @@ function applyPendingStart(start) {
   const range = engine.range();
   if (!range) return;
   if (start.fromResume) {
-    if (initialResumeApplied || engine.wantPlaying || engine.time() >= 2) return;
-    const resumeAt = resumeTimeFor(start.record, range.end - range.start);
-    if (resumeAt <= 0) return;
-    initialResumeApplied = true;
-    engine.seek(range.start + resumeAt);
-    message(`已定位到上次观看位置 ${formatClock(resumeAt)}，点击“播放”继续。`);
-    return;
+    if (!initialResumeApplied && !engine.wantPlaying && engine.time() < 2) {
+      const resumeAt = resumeTimeFor(start.record, range.end - range.start);
+      if (resumeAt > 0) {
+        initialResumeApplied = true;
+        engine.seek(range.start + resumeAt);
+        message(`已定位到上次观看位置 ${formatClock(resumeAt)}，点击“播放”继续。`);
+      }
+    }
+  } else {
+    if (start.time > 0) engine.seek(start.relativeToRange ? range.start + start.time : start.time);
+    if (start.autoplay) void engine.play();
   }
-  if (start.time > 0) engine.seek(start.relativeToRange ? range.start + start.time : start.time);
-  if (start.autoplay) void engine.play();
+  if (start.resyncCaptions) resyncCaptions({ retryCourse: true });
+}
+
+function finalizeEngineLoad({ time, relativeToRange, autoplay, preserve }) {
+  if (!(time > 0 || autoplay || preserve)) return;
+  const start = { generation: engine, time, relativeToRange, autoplay, resyncCaptions: preserve };
+  if (engine.range()) applyPendingStart(start);
+  else pendingStart = start;
 }
 
 function syncTimelineTrack(value, min, max) {
@@ -361,10 +371,6 @@ function stateChanged(state) {
     const start = pendingStart;
     pendingStart = null;
     applyPendingStart(start);
-  }
-  if (ready && pendingSubtitleResync === engine) {
-    pendingSubtitleResync = null;
-    resyncCaptions({ retryCourse: true });
   }
 }
 
@@ -433,12 +439,12 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
   const rate = engine?.rate || savedRate;
   playlist.cancelCountdown();
   pendingStart = null;
-  pendingSubtitleResync = null;
   wasPlaying = false;
   lastSavedTime = -1;
   engine?.destroy();
   engine = null;
   setScreenMode(media.length === 1);
+  const onWake = () => recoverAfterIdle({ forceSeek: true });
   if (singleMode) {
     const item = selectedPair()[0];
     const valid = !!item;
@@ -467,7 +473,7 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
     }
     primary = 0;
     /** @type {HTMLElement} */ (document.querySelector(".screens")).dataset.primary = "0";
-    if (!preserve && !userTouchedAudio) {
+    if (!preserve) {
       const preferred = resolveAudioPref(playerPrefs, courseKey, [item]);
       savedAudio = preferred === -1 ? -1 : 0;
     }
@@ -477,21 +483,13 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
     else players[0] = createLecturePlayer(videos[0], item.url, { hotkey: false, volume: savedVolume });
     videos[0].load();
     applyVolume(savedVolume);
-    engine = new SyncPlayer([videos[0]], { onState: stateChanged, onError: handleEngineError, onEnded: handlePlaybackEnded, onWake: handleSystemWake });
+    engine = new SyncPlayer([videos[0]], { onState: stateChanged, onError: handleEngineError, onEnded: handlePlaybackEnded, onWake });
     engine.setAudio(effectiveAudio);
     syncAudioRadios(effectiveAudio);
     engine.setRate(rate);
     subtitles[0].ensureCourse();
     selectReview(0);
-    if (time > 0 || autoplay) {
-      const start = { generation: engine, time, relativeToRange, autoplay };
-      if (engine.range()) applyPendingStart(start);
-      else pendingStart = start;
-    }
-    if (preserve) {
-      if (engine.range()) resyncCaptions({ retryCourse: true });
-      else pendingSubtitleResync = engine;
-    }
+    finalizeEngineLoad({ time, relativeToRange, autoplay, preserve });
     return;
   }
   const pair = selectedPair();
@@ -518,12 +516,10 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
     return;
   }
   if (!preserve) {
-    const slide = pair.findIndex((item) => /课件|幻灯|投屏|屏幕|桌面|PPT|slides?/i.test(item.label));
+    const slide = pair.findIndex((item) => mediaRole(item) === "slide");
     setPrimary(slide < 0 ? 0 : slide);
-    if (!userTouchedAudio) {
-      savedAudio = resolveAudioPref(playerPrefs, courseKey, pair);
-      syncAudioRadios(savedAudio);
-    }
+    savedAudio = resolveAudioPref(playerPrefs, courseKey, pair);
+    syncAudioRadios(savedAudio);
   } else {
     setPrimary(primary);
   }
@@ -537,22 +533,13 @@ function loadPair({ preserve = false, resumeAt = 0, relativeToRange = false, aut
   const savedCourseOffset = resolveOffsetPref(playerPrefs, courseKey);
   const offset = previousOffset ?? (savedCourseOffset !== undefined ? savedCourseOffset : recordingOffset(pair[0].url, pair[1].url));
   /** @type {HTMLInputElement} */ ($("offset")).value = String(offset);
-  engine = new SyncPlayer(videos, { onState: stateChanged, onError: handleEngineError, onEnded: handlePlaybackEnded, onWake: handleSystemWake, offset });
-  engine.setOffset(offset);
+  engine = new SyncPlayer(videos, { onState: stateChanged, onError: handleEngineError, onEnded: handlePlaybackEnded, onWake, offset });
   engine.setAudio(savedAudio);
   syncAudioRadios(savedAudio);
   engine.setRate(rate);
   subtitles.forEach((control) => control.ensureCourse());
   selectReview(openedReview ? reviewIndex : primary);
-  if (time > 0 || autoplay) {
-    const start = { generation: engine, time, relativeToRange, autoplay };
-    if (engine.range()) applyPendingStart(start);
-    else pendingStart = start;
-  }
-  if (preserve) {
-    if (engine.range()) resyncCaptions({ retryCourse: true });
-    else pendingSubtitleResync = engine;
-  }
+  finalizeEngineLoad({ time, relativeToRange, autoplay, preserve });
 }
 
 function populateSources(nextMedia, { keepSelection = false } = {}) {

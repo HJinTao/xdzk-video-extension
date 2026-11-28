@@ -5,11 +5,11 @@ import { JSDOM } from "jsdom";
 import { SyncPlayer, recordingOffset } from "../extension/lib/sync-player.js";
 import { mediaKey, formatClock } from "../extension/lib/media.js";
 import { bindSubtitles } from "../extension/lib/subtitles.js";
-import { bindPairedSubtitles } from "../extension/lib/paired-subtitles.js";
+import { bindPairedSubtitles, resolveCourseSubtitleAnchor } from "../extension/lib/paired-subtitles.js";
 import { bindPlaybackSpeed } from "../extension/lib/playback-speed.js";
 import { bindTranscript } from "../extension/lib/transcript.js";
 import { computeWatchStatus, resumeTimeFor } from "../extension/lib/watch-progress.js";
-import { buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref } from "../extension/lib/player-prefs.js";
+import { buildAudioPref, mediaRole, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref } from "../extension/lib/player-prefs.js";
 import { bindPlaylistPanel } from "../extension/lib/playlist-panel.js";
 import { bindPlayerShortcuts } from "../extension/lib/player-shortcuts.js";
 import { canTriggerAutoRefresh, refreshFailureActions, renderMessageBar } from "../extension/lib/source-recovery.js";
@@ -21,7 +21,7 @@ const code = (await readFile(new URL("../extension/player.js", import.meta.url),
 const flush = () => new Promise((done) => setTimeout(done, 15));
 async function page({ labels = ["画面 1", "画面 2"], captionResult = () => ({ ok: false, error: "本次回放没有可用的课程字幕" }), playlistResult, onMessage, prepareMedia } = {}) {
   const dom = new JSDOM(html, { url: "https://extension.test/player.html?id=demo", runScripts: "outside-only" });
-  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, buildAudioPref, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref, bindPlaylistPanel, bindPlayerShortcuts, canTriggerAutoRefresh, refreshFailureActions, renderMessageBar, enhanceSelect, enhanceSegmentedSelect, createLecturePlayer: createPlayerStub });
+  Object.assign(dom.window, { SyncPlayer, recordingOffset, bindSubtitles, bindPairedSubtitles, resolveCourseSubtitleAnchor, bindPlaybackSpeed, bindTranscript, formatClock, computeWatchStatus, resumeTimeFor, buildAudioPref, mediaRole, mergePlayerPrefs, normalizePlayerPrefs, resolveAudioPref, resolveOffsetPref, bindPlaylistPanel, bindPlayerShortcuts, canTriggerAutoRefresh, refreshFailureActions, renderMessageBar, enhanceSelect, enhanceSegmentedSelect, createLecturePlayer: createPlayerStub });
   let stamp = 1700000000;
   const captionRequests = [];
   dom.window.chrome = { runtime: { async sendMessage(message) {
@@ -782,7 +782,7 @@ test("long background idle and expired-source refresh automatically rebuild subt
     { startTime: 5, endTime: 12, text: "关系代数简介" },
     { startTime: 20, endTime: 28, text: "自然连接与投影" }
   ];
-  const createdCopies = [];
+  const copiesByVideo = new Map();
   let blobCount = 0;
   let refreshCount = 0;
   const makeMedia = (stamp) => [
@@ -811,9 +811,9 @@ test("long background idle and expired-source refresh automatically rebuild subt
       win.URL.createObjectURL = () => "blob:idle-captions/" + ++blobCount;
       win.URL.revokeObjectURL = () => {};
       win.VTTCue = class { constructor(startTime, endTime, text) { Object.assign(this, { startTime, endTime, text }); } };
-      win.HTMLMediaElement.prototype.addTextTrack = () => {
+      win.HTMLMediaElement.prototype.addTextTrack = function() {
         const copy = { cues: [], addCue(c) { this.cues.push(c); }, removeCue(c) { this.cues.splice(this.cues.indexOf(c), 1); } };
-        createdCopies.push(copy);
+        copiesByVideo.set(this, copy);
         return copy;
       };
     }
@@ -832,7 +832,8 @@ test("long background idle and expired-source refresh automatically rebuild subt
   const offset = document.querySelector("#offset");
   offset.value = "4";
   offset.dispatchEvent(new Event("change"));
-  assert.deepEqual(createdCopies[0].cues.map((c) => c.startTime), [9, 24]);
+  // Course captions anchor to "教室" (index 1), so index 0 ("课件") shifts by -4s.
+  assert.deepEqual(copiesByVideo.get(videos[0]).cues.map((c) => c.startTime), [1, 16]);
 
   // Open review panel and enter a search query.
   document.querySelector("#toggle-review").click();
@@ -857,7 +858,7 @@ test("long background idle and expired-source refresh automatically rebuild subt
   assert.ok(blobCount > blobsBeforeWake, "returning from long idle rebuilds caption tracks");
   loadPendingTracks();
   assert.equal(search.value, "投影", "automatic caption resync preserves user search query");
-  assert.deepEqual(createdCopies[0].cues.map((c) => c.startTime), [9, 24]);
+  assert.deepEqual(copiesByVideo.get(videos[0]).cues.map((c) => c.startTime), [1, 16]);
 
   // Triggering expired-source auto-refresh also rebuilds caption tracks and keeps offset intact.
   const blobsBeforeRefresh = blobCount;
@@ -867,6 +868,97 @@ test("long background idle and expired-source refresh automatically rebuild subt
   assert.ok(blobCount > blobsBeforeRefresh, "auto-refresh rebuilds caption tracks after video reload");
   loadPendingTracks();
   assert.equal(offset.value, "4");
-  assert.deepEqual(createdCopies[0].cues.map((c) => c.startTime), [9, 24]);
+  assert.deepEqual(copiesByVideo.get(videos[0]).cues.map((c) => c.startTime), [1, 16]);
   assert.equal(search.value, "投影");
+});
+
+test("switching lessons in playlist anchors shared course captions to the classroom camera when cameras have a recording offset", async (t) => {
+  const cues = [
+    { startTime: 10, endTime: 14, text: "大家好，今天讲数据库" },
+    { startTime: 25, endTime: 30, text: "事务的原子性" }
+  ];
+  const lessons = [
+    { liveId: "101", index: 1, title: "第 1 讲", shortDate: "09-07", timeRange: "08:30–10:05", available: true },
+    { liveId: "102", index: 2, title: "第 2 讲", shortDate: "09-09", timeRange: "08:30–10:05", available: true }
+  ];
+  const pptLesson2 = mediaUrl("CloudIPC-102-ppt"); // starts at 1789109401000
+  const camLesson2 = mediaUrl("CloudIPC-102-cam").replace("1789109401000", "1789109411000"); // starts 10s later -> offset = -10
+  const copiesByVideo = new Map();
+  let blobCount = 0;
+
+  const { dom, document, videos } = await page({
+    playlistResult: { ok: true, supported: true, courseKey: "code:CS101", courseTitle: "数据库系统", currentLiveId: "101", lessons, progress: {}, prefs: { autoPlayNext: true } },
+    captionResult: () => ({ ok: true, cues }),
+    onMessage(message) {
+      if (message.type === "GET_PLAYER") {
+        return {
+          ok: true, courseTitle: "数据库系统", currentLiveId: "101",
+          media: [
+            { key: mediaKey(mediaUrl("CloudIPC-101-cam")), label: "画面 1", url: mediaUrl("CloudIPC-101-cam") },
+            { key: mediaKey(mediaUrl("CloudIPC-101-ppt")), label: "画面 2", url: mediaUrl("CloudIPC-101-ppt") }
+          ]
+        };
+      }
+      if (message.type === "LOAD_LESSON") {
+        return {
+          ok: true, courseTitle: "数据库系统", lessonTitle: "第 2 讲", currentLiveId: "102",
+          media: [
+            { key: mediaKey(pptLesson2), label: "课件", role: "slide", url: pptLesson2 },
+            { key: mediaKey(camLesson2), label: "教室", role: "classroom", url: camLesson2 }
+          ]
+        };
+      }
+    },
+    prepareMedia(win) {
+      const trackMap = new WeakMap();
+      Object.defineProperty(win.HTMLTrackElement.prototype, "track", {
+        get() {
+          if (!trackMap.has(this)) {
+            trackMap.set(this, Object.assign(new win.EventTarget(), { cues, activeCues: [], mode: "disabled" }));
+          }
+          return trackMap.get(this);
+        }
+      });
+      win.URL.createObjectURL = () => "blob:switch-captions/" + ++blobCount;
+      win.URL.revokeObjectURL = () => {};
+      win.VTTCue = class { constructor(startTime, endTime, text) { Object.assign(this, { startTime, endTime, text }); } };
+      win.HTMLMediaElement.prototype.addTextTrack = function() {
+        const copy = { cues: [], mode: "disabled", addCue(c) { this.cues.push(c); }, removeCue(c) { this.cues.splice(this.cues.indexOf(c), 1); } };
+        copiesByVideo.set(this, copy);
+        return copy;
+      };
+    }
+  });
+  t.after(() => close(dom));
+
+  const { Event } = dom.window;
+  const loadTracks = () => {
+    videos.forEach((video) => {
+      const tracks = video.querySelectorAll("track");
+      if (tracks.length) tracks[tracks.length - 1].dispatchEvent(new Event("load"));
+    });
+  };
+  loadTracks();
+
+  // Switch to lesson 102 via playlist: [课件 (index 0), 教室 (index 1)] with recordingOffset = -10.
+  document.querySelector("#next-lesson").click();
+  await flush();
+  loadTracks();
+
+  assert.equal(document.querySelector("#offset").value, "-10");
+  // Audio defaults to classroom (index 1) on switched [课件, 教室] lessons so voice, leader and captions share the same clock.
+  assert.deepEqual(videos.map((v) => v.muted), [true, false]);
+  assert.equal(document.querySelector('input[name="audio"][value="1"]').checked, true);
+  // Classroom (index 1) owns the unshifted native track; Slide (index 0) gets +10s shifted copy ([20, 35]).
+  assert.equal(videos[1].querySelector("track").track.mode, "showing");
+  assert.equal(videos[0].querySelector("track").track.mode, "hidden");
+  assert.equal(copiesByVideo.get(videos[0]).mode, "showing");
+  assert.deepEqual(copiesByVideo.get(videos[0]).cues.map((c) => c.startTime), [20, 35]);
+
+  // Clicking cue at 10s in transcript seeks classroom to 10s and slide to 20s (same wall-clock moment).
+  document.querySelector("#toggle-review").click();
+  const entries = [...document.querySelectorAll("#cue-list button")];
+  assert.equal(entries.length, 2);
+  entries[0].click();
+  assert.deepEqual(videos.map((v) => v.currentTime), [20, 10]);
 });

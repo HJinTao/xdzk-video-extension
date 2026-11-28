@@ -189,8 +189,8 @@ export function parsePlayVideoHtml(html, liveId = "") {
 
   const now = Date.now();
   const candidates = [
-    { url: videoPath.pptVideo, label: "课件", videoIndex: 0 },
-    { url: videoPath.teacherTrack, label: "教室", videoIndex: 1 }
+    { url: videoPath.pptVideo, label: "课件", role: "slide", videoIndex: 0 },
+    { url: videoPath.teacherTrack, label: "教室", role: "classroom", videoIndex: 1 }
   ];
   const media = [];
   for (const entry of candidates) {
@@ -201,6 +201,7 @@ export function parsePlayVideoHtml(html, liveId = "") {
       key,
       url: entry.url,
       label: entry.label,
+      role: entry.role,
       videoIndex: entry.videoIndex,
       frameId: 0,
       firstSeen: now,

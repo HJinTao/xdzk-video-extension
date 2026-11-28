@@ -1,3 +1,16 @@
+import { mediaRole } from "./player-prefs.js";
+
+// Course ASR subtitles are timed to the classroom/teacher stream; fall back to
+// camera 0 when channels have generic labels (matching the replay page DOM).
+export function resolveCourseSubtitleAnchor(pair = []) {
+  if (pair.length < 2 || !pair[0] || !pair[1]) return 0;
+  const classroom = pair.findIndex((item) => mediaRole(item) === "classroom");
+  if (classroom >= 0) return classroom;
+  const slide = pair.findIndex((item) => mediaRole(item) === "slide");
+  if (slide >= 0) return 1 - slide;
+  return 0;
+}
+
 // Keep at most one reusable shared track per video. The review sidebar always
 // reads the original track, whose cue times are on its own camera's clock.
 export function bindPairedSubtitles(videos, controls) {
@@ -29,15 +42,16 @@ export function bindPairedSubtitles(videos, controls) {
     if (target.mode !== mode) target.mode = mode;
   }
 
-  return function update(offset, visible, { force = false } = {}) {
+  return function update(offset, visible, { force = false, courseAnchor = 0 } = {}) {
     const sources = controls.map(control => control.source);
     const [first, second] = sources;
     const sameCourse = first?.mode === "course" && second?.mode === "course" && first.vtt === second.vtt;
+    const anchor = courseAnchor === 1 ? 1 : 0;
     const origins = sources.map((own, index) => {
       const other = 1 - index;
       if (own?.mode === "file") return index;
       if (sources[other]?.mode === "file") return other;
-      if (sameCourse) return 0;
+      if (sameCourse) return anchor;
       if (own) return index;
       return sources[other] ? other : null;
     });
